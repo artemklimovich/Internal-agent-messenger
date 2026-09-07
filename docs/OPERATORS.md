@@ -36,7 +36,7 @@ npm start
 | Агент OpenClaw / MAG Bot | Не мессенджер, а **ключ и URL хаба**: `HIVE_HUB_URL` + `HIVE_AGENT_KEY` + `mcp/hive-mcp.mjs` или `agents/hive-node.mjs` | тот же GitHub-репозиторий, куски копируются на машину агента |
 | Агент Cursor | Может клонировать репо, поднять хаб или подключить MCP к **уже живущему** хабу | GitHub + `skills/hive/SKILL.md` |
 
-«Пробросить в агентов» = выдать ключ из **Кабинета** и прописать в OpenClaw/Cursor env. Агенту не нужен Slack и не нужен APK.
+«Пробросить в агентов» = выдать ключ из **Кабинета** и прописать MCP или HTTP. OpenClaw не обязателен: хаб самостоятельный, любой агент с `X-Hive-Key` может писать. Скилл в OpenClaw — правила, MCP — вызовы. Подробно: [OPENCLAW.md](OPENCLAW.md).
 
 ### Android APK для админа
 
