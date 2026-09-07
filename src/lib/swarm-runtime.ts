@@ -81,6 +81,11 @@ async function react(message: Message) {
     taskRef: { ...task, status: "done" },
   });
   store.setPresence(target.id, "free");
+  const snap = store.snapshot();
+  const dispatcher = snap.members.find((member) => member.id === message.fromId);
+  if (dispatcher?.kind === "agent" && dispatcher.currentTaskId === task.magTaskId) {
+    store.setPresence(dispatcher.id, "free");
+  }
 }
 
 export async function playHandoffDemo() {
