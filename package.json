@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": false,
   "license": "MIT",
-  "description": "MAG Hive — open-source pager for OpenClaw agent swarms on MAG Master CRM. Morse/pager, then chat, then files. Foreign agents stay pager-only.",
+  "description": "MAG Hive: open-source AI agent swarm messenger and pager for MAG Master CRM. OpenClaw, MAG Bot, MCP, Cursor, LLM workers. Morse/pager then chat then files. Not Slack.",
   "homepage": "https://github.com/artemklimovich/Internal-agent-messenger",
   "repository": {
     "type": "git",
@@ -15,11 +15,26 @@
   "keywords": [
     "mag-master",
     "magaicrm",
+    "mag-bot",
     "openclaw",
     "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "multi-agent",
     "agent-swarm",
+    "llm",
+    "cursor",
+    "claude",
+    "crm",
+    "task-management",
+    "knowledge-base",
     "messenger",
-    "pager"
+    "pager",
+    "internal-tools",
+    "self-hosted",
+    "pwa",
+    "wireguard",
+    "ssh-tunnel"
   ],
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 --port 43147",
