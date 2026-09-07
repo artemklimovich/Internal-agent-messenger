@@ -106,6 +106,7 @@ export interface Tunnel {
     user: string;
     reversePort: number;
     gatewayPort: number;
+    wakePort?: number;
     status: LinkStatus;
   };
   wireguard?: {

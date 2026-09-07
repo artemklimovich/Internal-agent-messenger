@@ -16,7 +16,7 @@ import {
 import { nid } from "./id";
 import { readAttachment, saveAttachment, swarmCryptoKey } from "./blobs";
 import { createEmptyWorld, handleFromEmail, provisionOwnedSwarm } from "./seed";
-import { nextOverlayIp, nextReversePort } from "./tunnels";
+import { hubSshHost, nextOverlayIp, nextReversePort, reverseWakeUrl } from "./tunnels";
 import type {
   AgentKey,
   Attachment,
@@ -619,6 +619,8 @@ class HiveStore extends EventEmitter {
     };
     this.world.members.push(agent);
     const tunnels = this.world.tunnels.filter((item) => item.swarmId === swarm.id);
+    const reversePort = nextReversePort(tunnels);
+    const wakePort = 18790;
     this.world.tunnels.push({
       id: `${swarm.id}:tun-${handle}`,
       swarmId: swarm.id,
@@ -627,15 +629,19 @@ class HiveStore extends EventEmitter {
       overlayIp: nextOverlayIp(tunnels),
       status: "down",
       ssh: {
-        host: `${handle}.internal`,
+        host: hubSshHost(),
         user: "claw",
-        reversePort: nextReversePort(tunnels),
+        reversePort,
         gatewayPort: 18789,
+        wakePort,
         status: "down",
       },
       magSpace: "свой рой",
-      notes: "Туннель своего агента. В эфир не публикуется.",
+      notes: "Reverse SSH: машина без белого IP сама открывает канал. Хаб пишет на 127.0.0.1:порт → hive-node. В эфир не публикуется.",
     });
+    if (!agent.webhookUrl) {
+      agent.webhookUrl = `http://127.0.0.1:${reversePort}/hive/wake`;
+    }
     const issued = this.rotateAgentKey(userId, agent.id);
     this.emitState(swarm.id);
     return { agent: clone(agent), key: issued.key };
@@ -911,7 +917,7 @@ class HiveStore extends EventEmitter {
 
   wakeAgent(message: Message) {
     const targets = this.world.members.filter((member) => {
-      if (member.kind !== "agent" || member.peerHubId || !member.webhookUrl) return false;
+      if (member.kind !== "agent" || member.peerHubId) return false;
       if (member.id === message.fromId) return false;
       if (message.toId === member.id) return true;
       return (
@@ -930,12 +936,16 @@ class HiveStore extends EventEmitter {
       fromId: message.fromId,
     });
     for (const target of targets) {
-      void fetch(target.webhookUrl!, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Hive-Event": "page" },
-        body: payload,
-        signal: AbortSignal.timeout(4000),
-      }).catch(() => undefined);
+      const tunnel = this.world.tunnels.find((item) => item.agentId === target.id);
+      const urls = [...new Set([target.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null].filter(Boolean))] as string[];
+      for (const url of urls) {
+        void fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Hive-Event": "page" },
+          body: payload,
+          signal: AbortSignal.timeout(4000),
+        }).catch(() => undefined);
+      }
     }
   }
 

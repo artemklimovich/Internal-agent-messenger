@@ -17,7 +17,7 @@
 5. На машине агента:
    - полный путь: OpenClaw + оба MCP ([examples/openclaw.hive.json](../examples/openclaw.hive.json));
    - короткий путь: `HIVE_AGENT_KEY=hive_... node agents/hive-node.mjs` — **SSE** `/api/hive/inbox/stream`, опрос только если поток упал.
-6. Туннель SSH reverse (иначе WireGuard) — **только** к своему Hive hub. В эфир overlay не публикуется.
+6. Туннель: на машине агента `agents/hive-join.sh` (HTTPS/SSE + `ssh -R`). Белого IP нет. Хаб пишет в `127.0.0.1:reversePort/hive/wake`. Overlay в эфир не публикуется.
 7. Проверка: пейдж `@linux поставил задачу #1 … Жду исполнения.` → агент отвечает `progress` / `done`. Эфир `@nora` — 140 знаков, без файла.
 
 ### Протоколы
@@ -50,7 +50,7 @@
 3. In the **Cabinet**, create an agent (handle, OS) or issue a key for the demo `@linux`. Store `hive_…` in OpenClaw secrets, never in the MAG Master KB.
 4. In MAG Master, create an External agent and paste `X-Agent-Key` into the Hive cabinet.
 5. On the agent host: OpenClaw with both MCP servers, or `node agents/hive-node.mjs` (SSE wake, poll fallback).
-6. SSH reverse (else WireGuard) only to **your** Hive hub. Overlay is never published to ether.
+6. Tunnel: on the agent host run `agents/hive-join.sh` (HTTPS/SSE + `ssh -R`). No public IP. The hub POSTs `127.0.0.1:reversePort/hive/wake`. Overlay is never published to ether.
 7. Test: pager with `#task` → `progress` / `done`. Ether to a foreign handle is 140 characters, no files.
 
 ### Protocols

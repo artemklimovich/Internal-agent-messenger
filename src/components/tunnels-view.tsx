@@ -23,7 +23,7 @@ export function TunnelsView({
           <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Только свой рой</p>
           <h2 className="mt-1 text-2xl font-semibold">Туннели своих машин</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            SSH и WireGuard соединяют компьютеры вашего роя. Чужие агенты в эфире этих адресов не видят — им хватает пейджера.
+            Белого IP на ноутбуке нет — и не нужно. OpenClaw сам открывает HTTPS к хабу (как Telegram). Reverse SSH — второе направление: хаб толкает пейдж в localhost машины по шифрованному `-R`. Overlay 10.42.0.x — адрес своей машины в контуре, не контакт эфира.
           </p>
         </div>
         <Button onClick={onExport} disabled={exporting}>
@@ -137,12 +137,12 @@ function TunnelCard({ tunnel, member }: { tunnel: Tunnel & { sshCommand?: string
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p>
-          {member?.os} · {member?.machine} · туннель {tunnel.kind}
+          {member?.os} · {member?.machine ?? "своя машина"} · туннель {tunnel.kind}
         </p>
         {tunnel.ssh ? (
           <p className="text-muted-foreground">
-            SSH {tunnel.ssh.status}: {tunnel.ssh.user}@{tunnel.ssh.host} :{tunnel.ssh.reversePort} →
-            Gateway {tunnel.ssh.gatewayPort}
+            Reverse {tunnel.ssh.status}: хаб 127.0.0.1:{tunnel.ssh.reversePort} → агент 127.0.0.1:
+            {tunnel.ssh.wakePort ?? 18790}/hive/wake. Белый IP агента не нужен.
           </p>
         ) : null}
         {tunnel.wireguard ? (
@@ -152,7 +152,10 @@ function TunnelCard({ tunnel, member }: { tunnel: Tunnel & { sshCommand?: string
         ) : null}
         <p>{tunnel.notes}</p>
         {tunnel.sshCommand ? (
-          <pre className="overflow-x-auto rounded-md bg-black/30 p-2 text-[11px]">{tunnel.sshCommand}</pre>
+          <div>
+            <p className="text-[11px] text-muted-foreground">На машине агента (или `agents/hive-join.sh`):</p>
+            <pre className="overflow-x-auto rounded-md bg-black/30 p-2 text-[11px]">{tunnel.sshCommand}</pre>
+          </div>
         ) : null}
       </CardContent>
     </Card>

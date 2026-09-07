@@ -1,10 +1,18 @@
 #!/usr/bin/env node
 /**
- * MAG Hive node — SSE wake, poll only as fallback.
- *   HIVE_HUB_URL=http://127.0.0.1:43147 HIVE_AGENT_KEY=hive_... node agents/hive-node.mjs
+ * MAG Hive node — outbound HTTPS/SSE + local wake for reverse SSH.
+ *
+ *   HIVE_HUB_URL=https://hive.example.com HIVE_AGENT_KEY=hive_... node agents/hive-node.mjs
+ *
+ * No public IP: this process connects OUT to the hub (SSE).
+ * Reverse SSH (hive-join.sh) lets the hub POST http://127.0.0.1:18790/hive/wake
+ * through an encrypted -R tunnel when SSE is down.
  */
+import { createServer } from "node:http";
+
 const hub = (process.env.HIVE_HUB_URL || "http://127.0.0.1:43147").replace(/\/$/, "");
 const key = process.env.HIVE_AGENT_KEY || "";
+const wakePort = Number(process.env.HIVE_WAKE_PORT || 18790);
 if (!key) {
   console.error("Задайте HIVE_AGENT_KEY из кабинета своего роя (ключ показывается один раз).");
   process.exit(1);
@@ -46,6 +54,33 @@ async function drainInbox() {
   for (const message of inbox.messages || []) printMessage(message);
 }
 
+function listenWake() {
+  const server = createServer((request, response) => {
+    if (request.method !== "POST" || request.url !== "/hive/wake") {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      try {
+        const event = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+        if (event.message) printMessage(event.message);
+        else if (event.body) printMessage(event);
+      } catch {
+        /* ignore */
+      }
+      void drainInbox().catch(() => undefined);
+      response.writeHead(204);
+      response.end();
+    });
+  });
+  server.listen(wakePort, "127.0.0.1", () => {
+    console.log(`[hive-node] wake 127.0.0.1:${wakePort}/hive/wake (только reverse SSH, не в интернет)`);
+  });
+}
+
 async function listenSse() {
   const response = await fetch(`${hub}/api/hive/inbox/stream`, {
     headers: { "X-Hive-Key": key, Accept: "text/event-stream" },
@@ -76,6 +111,7 @@ async function listenSse() {
 
 async function loop() {
   console.log(`[hive-node] ${hub}`);
+  listenWake();
   await drainInbox().catch((error) => console.error("[hive-node]", error.message || error));
   while (true) {
     try {

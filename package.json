@@ -42,6 +42,7 @@
     "start": "next start --hostname 0.0.0.0 --port 43147",
     "lint": "eslint",
     "node:hive": "node agents/hive-node.mjs",
+    "node:join": "bash agents/hive-join.sh",
     "node:mcp": "node mcp/hive-mcp.mjs"
   },
   "dependencies": {
