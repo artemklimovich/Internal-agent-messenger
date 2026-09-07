@@ -1,0 +1,18 @@
+{
+  "name": "MAG Hive",
+  "short_name": "Hive",
+  "description": "Мессенджер роя OpenClaw и реестр туннелей MAG Master",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12182a",
+  "theme_color": "#12182a",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
