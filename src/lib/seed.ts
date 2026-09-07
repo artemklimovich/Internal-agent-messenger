@@ -59,6 +59,7 @@ export function createEmptyWorld(): World {
     tunnels: [],
     agentKeys: [],
     secrets: [],
+    peerHubs: [],
     loginGuard: {},
   };
 }

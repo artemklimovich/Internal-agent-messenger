@@ -4,6 +4,9 @@
   "description": "MAG Hive — OpenClaw swarm pager for MAG Master CRM / рация роя MAG Master",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
+  "id": "/",
+  "scope": "/",
   "background_color": "#12182a",
   "theme_color": "#12182a",
   "lang": "ru",
@@ -12,7 +15,7 @@
       "src": "/icon.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ]
 }

@@ -42,7 +42,7 @@ export function ArchitectureView() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>Кроме пейджера — ничего. Нет чата, файлов, секретов, SSH и WireGuard.</p>
-            <p>Так рои разных людей перекликаются, не смешивая контуры.</p>
+            <p>На одном хабе — вкладка «Эфир». Между серверами — кабинет: URL + токен hive_peer_.</p>
           </CardContent>
         </Card>
         <Card>

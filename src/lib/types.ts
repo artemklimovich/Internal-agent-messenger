@@ -43,11 +43,33 @@ export interface User {
   createdAt: number;
 }
 
+export interface MagConnect {
+  apiUrl: string;
+  gatewayUrl: string;
+  projectId: string;
+  keyEnc: { iv: string; ciphertext: string; tag: string };
+  connectedAt: number;
+}
+
 export interface Swarm {
   id: string;
   ownerUserId: string;
   name: string;
   magProjectId?: string;
+  publicUrl?: string;
+  peerInviteHash?: string;
+  magConnect?: MagConnect;
+}
+
+export interface PeerHub {
+  id: string;
+  ownerSwarmId: string;
+  url: string;
+  name: string;
+  tokenEnc: { iv: string; ciphertext: string; tag: string };
+  lastOkAt?: number;
+  lastError?: string;
+  cache?: EtherAgent[];
 }
 
 export interface Member {
@@ -68,6 +90,8 @@ export interface Member {
   simulated?: boolean;
   magProjectId?: string;
   discoverable?: boolean;
+  webhookUrl?: string;
+  peerHubId?: string;
 }
 
 export interface Tunnel {
@@ -173,6 +197,7 @@ export interface World {
   tunnels: Tunnel[];
   agentKeys: AgentKey[];
   secrets: SealedSecret[];
+  peerHubs: PeerHub[];
   loginGuard: Record<string, { fails: number; lockedUntil?: number }>;
 }
 
@@ -212,6 +237,8 @@ export interface EtherAgent {
   swarmName: string;
   ownerName: string;
   lastSeenAt: number;
+  remote?: boolean;
+  hubUrl?: string;
 }
 
 export interface SessionUser {

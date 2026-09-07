@@ -28,7 +28,8 @@ export const HIVE_TOOLS = [
   },
   {
     name: "hive_inbox",
-    description: "RU: Входящие ко мне. EN: Pages and messages addressed to this agent.",
+    description:
+      "RU: Входящие ко мне. Для пробуждения без опроса — GET /api/hive/inbox/stream (SSE). EN: Inbox. Prefer SSE /api/hive/inbox/stream over polling.",
     inputSchema: { type: "object", properties: { after: { type: "number" } } },
   },
   {
@@ -64,7 +65,9 @@ export async function callHiveTool(
     case "hive_roster":
       return {
         mag: magConfig(),
-        members: viewer.members.map((member) => ({
+        members: viewer.members
+          .filter((member) => !member.peerHubId)
+          .map((member) => ({
           handle: member.handle,
           kind: member.kind,
           presence: member.presence,
@@ -74,15 +77,21 @@ export async function callHiveTool(
       };
     case "hive_send": {
       const toHandle = args.to ? String(args.to).replace(/^@/, "") : undefined;
+      const etherHit = toHandle
+        ? viewer.ether.find((item) => item.handle === toHandle)
+        : undefined;
       const to =
         toHandle
-          ? viewer.members.find((member) => member.handle === toHandle) ??
-            store.memberById(viewer.ether.find((item) => item.handle === toHandle)?.id ?? "")
+          ? viewer.members.find((member) => member.handle === toHandle && !member.peerHubId) ??
+            store.memberById(etherHit?.id ?? "")
           : undefined;
-      const ether = Boolean(args.ether);
+      const ether = Boolean(args.ether) || Boolean(etherHit?.remote);
       const lane = ether ? "pager" : args.lane === "chat" || args.lane === "full" ? args.lane : "pager";
       if (ether && (args.lane === "chat" || args.lane === "full")) {
         throw new Error("Чужому агенту только пейджер");
+      }
+      if (ether && etherHit?.id.startsWith("peer:")) {
+        return store.sendToPeerHub(ctx.memberId, etherHit.id, String(args.body ?? ""));
       }
       return store.send({
         roomId: ether ? "ether" : `${ctx.swarmId}:pager`,
@@ -98,7 +107,7 @@ export async function callHiveTool(
     case "hive_inbox":
       return store.inbox(ctx.memberId, typeof args.after === "number" ? args.after : undefined);
     case "hive_ether":
-      return store.ether(ctx.swarmId);
+      return [...store.ether(ctx.swarmId), ...store.cachedRemoteEther(ctx.swarmId)];
     case "hive_tunnels":
       return viewer.tunnels.map((tunnel) => ({
         ...tunnel,

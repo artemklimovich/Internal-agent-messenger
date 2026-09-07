@@ -7,6 +7,7 @@ import {
   hashAgentKey,
   hashPassword,
   newAgentKey,
+  newPeerKey,
   rateLimit,
   safeEqualHex,
   stripFederationBody,
@@ -15,6 +16,7 @@ import {
 import { nid } from "./id";
 import { readAttachment, saveAttachment, swarmCryptoKey } from "./blobs";
 import { createEmptyWorld, handleFromEmail, provisionOwnedSwarm } from "./seed";
+import { nextOverlayIp, nextReversePort } from "./tunnels";
 import type {
   AgentKey,
   Attachment,
@@ -23,6 +25,8 @@ import type {
   Member,
   Message,
   MessageLane,
+  OsKind,
+  PeerHub,
   SealedSecret,
   SendMessageInput,
   SessionUser,
@@ -67,6 +71,7 @@ class HiveStore extends EventEmitter {
         return createEmptyWorld();
       }
       parsed.secrets ??= [];
+      parsed.peerHubs ??= [];
       parsed.messages = parsed.messages.map((message) => ({
         ...message,
         lane: message.lane ?? "pager",
@@ -186,6 +191,9 @@ class HiveStore extends EventEmitter {
             (message.fromSwarmId === swarm.id || message.toSwarmId === swarm.id))),
     );
     const tunnels = this.world.tunnels.filter((tunnel) => tunnel.swarmId === swarm.id);
+    for (const peer of this.world.peerHubs.filter((item) => item.ownerSwarmId === swarm.id)) {
+      if (!peer.lastOkAt || Date.now() - (peer.lastOkAt ?? 0) > 45_000) void this.refreshPeer(peer.id);
+    }
     return {
       me: {
         id: user.id,
@@ -200,7 +208,25 @@ class HiveStore extends EventEmitter {
       rooms,
       messages,
       tunnels,
-      ether: this.ether(swarm.id),
+      ether: [...this.ether(swarm.id), ...this.cachedRemoteEther(swarm.id)],
+      peers: this.world.peerHubs
+        .filter((peer) => peer.ownerSwarmId === swarm.id)
+        .map((peer) => ({
+          id: peer.id,
+          url: peer.url,
+          name: peer.name,
+          lastOkAt: peer.lastOkAt,
+          lastError: peer.lastError,
+        })),
+      mag: {
+        connected: Boolean(swarm.magConnect),
+        projectId: swarm.magConnect?.projectId ?? swarm.magProjectId,
+        apiUrl: swarm.magConnect?.apiUrl,
+        gatewayUrl: swarm.magConnect?.gatewayUrl,
+        docs: "https://magaicrm.ru/help/docs/mcp/external-agents",
+      },
+      publicUrl: swarm.publicUrl ?? process.env.HIVE_PUBLIC_URL ?? "",
+      peerInviteSet: Boolean(swarm.peerInviteHash),
       lanes: {
         pager: { max: SWARM_PAGE_MAX, ttlHours: 24, etherMax: FED_PAGE_MAX, etherTtlHours: 2 },
         chat: { max: SWARM_CHAT_MAX, ttlDays: 7, ownOnly: true },
@@ -258,11 +284,13 @@ class HiveStore extends EventEmitter {
       if (requestedLane !== "pager" || input.attachments?.length || input.secret) {
         throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
       }
-      if (!to || to.swarmId === from.swarmId) {
+      if (!to) throw new Error("Эфир только к чужому агенту");
+      const ghostHop = Boolean(from.peerHubId || to.peerHubId);
+      if (!ghostHop && to.swarmId === from.swarmId) {
         throw new Error("Эфир только к чужому агенту");
       }
-      if (!to.discoverable) throw new Error("Агент скрыт из эфира");
-    } else if (to && to.swarmId !== from.swarmId) {
+      if (!to.peerHubId && to.kind === "agent" && !to.discoverable) throw new Error("Агент скрыт из эфира");
+    } else if (to && to.swarmId !== from.swarmId && !to.peerHubId) {
       throw new Error("В свой канал нельзя писать чужому рою");
     }
 
@@ -334,10 +362,11 @@ class HiveStore extends EventEmitter {
       swarmId: from.swarmId,
     } satisfies HiveEvent);
     this.persist();
+    this.wakeAgent(message);
     return message;
   }
 
-  sendAsUser(
+  async sendAsUser(
     userId: string,
     input: {
       body: string;
@@ -352,6 +381,13 @@ class HiveStore extends EventEmitter {
     const swarm = this.swarmByOwner(userId);
     const from = this.world.members.find((member) => member.userId === userId);
     if (!swarm || !from) throw new Error("unauthorized");
+    if (input.toId?.startsWith("peer:")) {
+      if (input.lane === "chat" || input.lane === "full" || input.attachments?.length || input.secret) {
+        throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
+      }
+      if (!rateLimit(`send:${userId}:ether`, 8, 60_000)) throw new Error("Слишком часто.");
+      return this.sendToPeerHub(from.id, input.toId, input.body);
+    }
     const to = input.toId ? this.memberById(input.toId) : undefined;
     const scope = input.scope ?? (to && to.swarmId !== swarm.id ? "federation" : "swarm");
     const lane = scope === "federation" ? "pager" : (input.lane ?? "pager");
@@ -554,6 +590,355 @@ class HiveStore extends EventEmitter {
     return clone(agent);
   }
 
+  createAgent(
+    userId: string,
+    input: { handle: string; name: string; os: OsKind; role?: string; webhookUrl?: string },
+  ) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    const handle = input.handle.replace(/^@/, "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 24);
+    if (handle.length < 2) throw new Error("Хэндл от 2 символов: латиница, цифры, _-");
+    if (this.world.members.some((member) => member.swarmId === swarm.id && member.handle === handle)) {
+      throw new Error("Такой @handle уже есть в рое");
+    }
+    const agent: Member = {
+      id: `${swarm.id}:${handle}`,
+      swarmId: swarm.id,
+      kind: "agent",
+      name: input.name.trim() || handle,
+      handle,
+      role: input.role?.trim() || "Исполнитель",
+      os: input.os,
+      presence: "offline",
+      lastSeenAt: Date.now(),
+      region: "свой контур",
+      capabilities: ["пейджер", "чат", "полный канал"],
+      simulated: false,
+      discoverable: false,
+      webhookUrl: sanitizeWebhook(input.webhookUrl),
+    };
+    this.world.members.push(agent);
+    const tunnels = this.world.tunnels.filter((item) => item.swarmId === swarm.id);
+    this.world.tunnels.push({
+      id: `${swarm.id}:tun-${handle}`,
+      swarmId: swarm.id,
+      agentId: agent.id,
+      kind: "ssh",
+      overlayIp: nextOverlayIp(tunnels),
+      status: "down",
+      ssh: {
+        host: `${handle}.internal`,
+        user: "claw",
+        reversePort: nextReversePort(tunnels),
+        gatewayPort: 18789,
+        status: "down",
+      },
+      magSpace: "свой рой",
+      notes: "Туннель своего агента. В эфир не публикуется.",
+    });
+    const issued = this.rotateAgentKey(userId, agent.id);
+    this.emitState(swarm.id);
+    return { agent: clone(agent), key: issued.key };
+  }
+
+  setWebhook(userId: string, agentId: string, webhookUrl: string) {
+    const swarm = this.swarmByOwner(userId);
+    const agent = this.memberById(agentId);
+    if (!swarm || !agent || agent.swarmId !== swarm.id || agent.kind !== "agent") {
+      throw new Error("forbidden");
+    }
+    agent.webhookUrl = sanitizeWebhook(webhookUrl);
+    this.emitState(swarm.id);
+    return clone(agent);
+  }
+
+  connectMag(
+    userId: string,
+    input: { agentKey: string; projectId?: string; apiUrl?: string; gatewayUrl?: string },
+  ) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    const key = input.agentKey.trim();
+    if (key.length < 8) throw new Error("Ключ MAG Master слишком короткий");
+    const apiUrl = (input.apiUrl || "https://app.magaicrm.ru/api").replace(/\/$/, "");
+    const gatewayUrl =
+      (input.gatewayUrl || `${apiUrl.replace(/\/api$/, "")}/api/external-agents`).replace(/\/$/, "");
+    swarm.magConnect = {
+      apiUrl,
+      gatewayUrl,
+      projectId: (input.projectId || swarm.magProjectId || "mag-hive").trim(),
+      keyEnc: encryptSecret(key, swarmCryptoKey(swarm.id)),
+      connectedAt: Date.now(),
+    };
+    swarm.magProjectId = swarm.magConnect.projectId;
+    this.emitState(swarm.id);
+    return { connected: true, projectId: swarm.magConnect.projectId, gatewayUrl };
+  }
+
+  disconnectMag(userId: string) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    swarm.magConnect = undefined;
+    this.emitState(swarm.id);
+    return { connected: false };
+  }
+
+  magCredentials(swarmId: string) {
+    const swarm = this.world.swarms.find((item) => item.id === swarmId);
+    if (!swarm?.magConnect) return null;
+    return {
+      apiUrl: swarm.magConnect.apiUrl,
+      gatewayUrl: swarm.magConnect.gatewayUrl,
+      projectId: swarm.magConnect.projectId,
+      key: decryptSecret(swarm.magConnect.keyEnc, swarmCryptoKey(swarm.id)),
+    };
+  }
+
+  setPublicUrl(userId: string, url: string) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    swarm.publicUrl = url.trim().replace(/\/$/, "");
+    this.emitState(swarm.id);
+    return { publicUrl: swarm.publicUrl };
+  }
+
+  rotatePeerInvite(userId: string) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    const token = newPeerKey();
+    swarm.peerInviteHash = hashAgentKey(token);
+    this.persist();
+    return { token, publicUrl: swarm.publicUrl || process.env.HIVE_PUBLIC_URL || "" };
+  }
+
+  swarmByPeerKey(token: string) {
+    const digest = hashAgentKey(token);
+    return this.world.swarms.find((swarm) => swarm.peerInviteHash && safeEqualHex(swarm.peerInviteHash, digest));
+  }
+
+  addPeer(userId: string, input: { url: string; token: string; name?: string }) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    let url: string;
+    try {
+      url = new URL(input.url).origin;
+    } catch {
+      throw new Error("Некорректный URL чужого хаба");
+    }
+    if (this.world.peerHubs.some((peer) => peer.ownerSwarmId === swarm.id && peer.url === url)) {
+      throw new Error("Этот хаб уже добавлен");
+    }
+    const peer: PeerHub = {
+      id: nid("peer-"),
+      ownerSwarmId: swarm.id,
+      url,
+      name: input.name?.trim() || url.replace(/^https?:\/\//, ""),
+      tokenEnc: encryptSecret(input.token.trim(), swarmCryptoKey(swarm.id)),
+    };
+    this.world.peerHubs.push(peer);
+    this.persist();
+    void this.refreshPeer(peer.id);
+    return { id: peer.id, url: peer.url, name: peer.name };
+  }
+
+  removePeer(userId: string, peerId: string) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    this.world.peerHubs = this.world.peerHubs.filter(
+      (peer) => !(peer.id === peerId && peer.ownerSwarmId === swarm.id),
+    );
+    this.emitState(swarm.id);
+  }
+
+  cachedRemoteEther(swarmId: string): EtherAgent[] {
+    return this.world.peerHubs
+      .filter((peer) => peer.ownerSwarmId === swarmId)
+      .flatMap((peer) =>
+        (peer.cache ?? []).map((agent) => ({
+          ...agent,
+          id: `peer:${peer.id}:${agent.handle}`,
+          remote: true,
+          hubUrl: peer.url,
+          swarmName: agent.swarmName || peer.name,
+        })),
+      );
+  }
+
+  async refreshPeer(peerId: string) {
+    const peer = this.world.peerHubs.find((item) => item.id === peerId);
+    if (!peer) return;
+    const swarm = this.world.swarms.find((item) => item.id === peer.ownerSwarmId);
+    if (!swarm) return;
+    try {
+      const token = decryptSecret(peer.tokenEnc, swarmCryptoKey(swarm.id));
+      const response = await fetch(`${peer.url}/api/federation/ether`, {
+        headers: { "X-Hive-Peer-Key": token },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) throw new Error(`хаб ответил ${response.status}`);
+      const json = (await response.json()) as { agents?: EtherAgent[] };
+      peer.cache = json.agents ?? [];
+      peer.lastOkAt = Date.now();
+      peer.lastError = undefined;
+    } catch (error) {
+      peer.lastError = error instanceof Error ? error.message : "peer error";
+    }
+    this.persist();
+  }
+
+  federationEther(token: string) {
+    const swarm = this.swarmByPeerKey(token);
+    if (!swarm) throw new Error("unauthorized");
+    return this.world.members
+      .filter((member) => member.swarmId === swarm.id && member.kind === "agent" && member.discoverable)
+      .map((member) => ({
+        id: member.id,
+        handle: member.handle,
+        name: member.name,
+        os: member.os,
+        presence: member.presence,
+        region: member.region ?? "скрыт",
+        swarmName: swarm.name,
+        ownerName: this.userById(swarm.ownerUserId)?.name ?? "рой",
+        lastSeenAt: member.lastSeenAt,
+      }));
+  }
+
+  ingestPeerPage(
+    token: string,
+    input: { fromHandle: string; fromSwarmName: string; toHandle: string; body: string; hubUrl?: string },
+  ) {
+    const swarm = this.swarmByPeerKey(token);
+    if (!swarm) throw new Error("unauthorized");
+    if (!rateLimit(`peer-in:${swarm.id}`, 20, 60_000)) throw new Error("Слишком часто.");
+    const to = this.world.members.find(
+      (member) =>
+        member.swarmId === swarm.id &&
+        member.kind === "agent" &&
+        member.handle === input.toHandle.replace(/^@/, "") &&
+        member.discoverable,
+    );
+    if (!to) throw new Error("Агент скрыт или не найден");
+    const fromHandle = input.fromHandle.replace(/^@/, "").slice(0, 24) || "peer";
+    const ghostId = `ghost:${swarm.id}:${fromHandle}`;
+    let from = this.memberById(ghostId);
+    if (!from) {
+      from = {
+        id: ghostId,
+        swarmId: swarm.id,
+        kind: "agent",
+        name: fromHandle,
+        handle: fromHandle,
+        role: "Чужой хаб",
+        presence: "free",
+        lastSeenAt: Date.now(),
+        region: input.hubUrl || "эфир",
+        capabilities: ["пейджер"],
+        discoverable: false,
+        peerHubId: "inbound",
+      };
+      this.world.members.push(from);
+    }
+    const body = stripFederationBody(input.body, FED_PAGE_MAX);
+    if (!body) throw new Error("Пустой пейдж");
+    return this.send({
+      roomId: "ether",
+      swarmId: swarm.id,
+      fromId: from.id,
+      toId: to.id,
+      kind: "page",
+      lane: "pager",
+      body: `${body}`,
+      scope: "federation",
+    });
+  }
+
+  async sendToPeerHub(fromId: string, toId: string, body: string) {
+    const [, peerId, handle] = toId.split(":");
+    const from = this.memberById(fromId);
+    const swarm = from ? this.world.swarms.find((item) => item.id === from.swarmId) : undefined;
+    const peer = this.world.peerHubs.find((item) => item.id === peerId && item.ownerSwarmId === swarm?.id);
+    if (!swarm || !from || !peer) throw new Error("Чужой хаб не найден");
+    const cleaned = stripFederationBody(body, FED_PAGE_MAX);
+    if (!cleaned) throw new Error("Пустой пейдж");
+    const token = decryptSecret(peer.tokenEnc, swarmCryptoKey(swarm.id));
+    const response = await fetch(`${peer.url}/api/federation/page`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Hive-Peer-Key": token },
+      body: JSON.stringify({
+        fromHandle: from.handle,
+        fromSwarmName: swarm.name,
+        toHandle: handle,
+        body: cleaned,
+        hubUrl: swarm.publicUrl || process.env.HIVE_PUBLIC_URL || "",
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Чужой хаб: ${text.slice(0, 180) || response.status}`);
+    }
+    const ghostId = `ghost-out:${peer.id}:${handle}`;
+    let ghost = this.memberById(ghostId);
+    if (!ghost) {
+      ghost = {
+        id: ghostId,
+        swarmId: swarm.id,
+        kind: "agent",
+        name: handle,
+        handle,
+        role: "Чужой хаб",
+        presence: "free",
+        lastSeenAt: Date.now(),
+        region: peer.name,
+        capabilities: ["пейджер"],
+        discoverable: false,
+        peerHubId: peer.id,
+      };
+      this.world.members.push(ghost);
+    }
+    return this.send({
+      roomId: "ether",
+      swarmId: swarm.id,
+      fromId: from.id,
+      toId: ghost.id,
+      kind: "page",
+      lane: "pager",
+      body: cleaned,
+      scope: "federation",
+    });
+  }
+
+  wakeAgent(message: Message) {
+    const targets = this.world.members.filter((member) => {
+      if (member.kind !== "agent" || member.peerHubId || !member.webhookUrl) return false;
+      if (member.id === message.fromId) return false;
+      if (message.toId === member.id) return true;
+      return (
+        message.scope === "swarm" &&
+        message.swarmId === member.swarmId &&
+        message.body.includes(`@${member.handle}`)
+      );
+    });
+    const payload = JSON.stringify({
+      type: "hive_page",
+      at: message.createdAt,
+      lane: message.lane,
+      kind: message.kind,
+      body: message.body,
+      task: message.taskRef ?? null,
+      fromId: message.fromId,
+    });
+    for (const target of targets) {
+      void fetch(target.webhookUrl!, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hive-Event": "page" },
+        body: payload,
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => undefined);
+    }
+  }
+
   inbox(agentId: string, after?: number) {
     this.purgeExpired();
     const agent = this.memberById(agentId);
@@ -712,6 +1097,23 @@ function parseTaskRef(body: string): Message["taskRef"] | undefined {
   const match = body.match(/#(\d+)/);
   if (!match) return undefined;
   return { magTaskId: match[1], title: body.slice(0, 140) };
+}
+
+function sanitizeWebhook(url?: string) {
+  const value = (url ?? "").trim();
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("bad");
+    const host = parsed.hostname.toLowerCase();
+    if (host === "169.254.169.254" || host.endsWith(".metadata.google.internal")) {
+      throw new Error("Webhook: этот хост нельзя");
+    }
+    return parsed.toString();
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Webhook:")) throw error;
+    throw new Error("Webhook: нужен http(s) URL");
+  }
 }
 
 const globalForHive = globalThis as unknown as { __hiveStore?: HiveStore };

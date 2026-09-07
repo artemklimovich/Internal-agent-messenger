@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Manrope, IBM_Plex_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { PwaRegister } from "@/components/pwa-register";
 import "./globals.css";
 
 const sans = Manrope({
@@ -20,6 +21,10 @@ export const metadata: Metadata = {
     "MAG Hive — pager for OpenClaw swarms on MAG Master CRM. Рация роя: пейджер, чат, полный канал.",
   applicationName: "MAG Hive",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
   appleWebApp: {
     capable: true,
     title: "MAG Hive",
@@ -40,7 +45,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`dark ${sans.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          <PwaRegister />
+          {children}
+        </TooltipProvider>
       </body>
     </html>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArchitectureView } from "@/components/architecture-view";
+import { HiveCabinet } from "@/components/hive-cabinet";
 import { MessageCard } from "@/components/message-card";
 import { TunnelsView } from "@/components/tunnels-view";
 import { Badge } from "@/components/ui/badge";
@@ -77,10 +77,19 @@ export function HiveApp() {
   const steps = sceneKind === "full" ? FULL_STEPS : PAGER_STEPS;
 
   const pagerMessages = useMemo(() => {
-    const swarm = (data?.messages ?? []).filter((message) => message.scope === "swarm");
-    if (filter === "all") return swarm;
-    return swarm.filter((message) => (message.lane ?? "pager") === filter);
-  }, [data, filter]);
+    let swarm = (data?.messages ?? []).filter((message) => message.scope === "swarm");
+    if (filter !== "all") swarm = swarm.filter((message) => (message.lane ?? "pager") === filter);
+    if (toId && data) {
+      const handle = data.members.find((member) => member.id === toId)?.handle;
+      swarm = swarm.filter(
+        (message) =>
+          message.toId === toId ||
+          message.fromId === toId ||
+          (handle && message.body.includes(`@${handle}`)),
+      );
+    }
+    return swarm;
+  }, [data, filter, toId]);
   const etherMessages = useMemo(
     () => (data?.messages ?? []).filter((message) => message.scope === "federation"),
     [data],
@@ -277,6 +286,7 @@ export function HiveApp() {
             <p className="text-[11px] tracking-wider text-muted-foreground uppercase">Свои агенты</p>
             {data.members
               .filter((member) => member.kind === "agent")
+              .filter((member) => !member.peerHubId)
               .map((member) => (
                 <button
                   key={member.id}
@@ -305,13 +315,22 @@ export function HiveApp() {
                     {item === "all" ? "все" : item === "pager" ? "пейджер" : item === "chat" ? "чат" : "полный"}
                   </Button>
                 ))}
+                {toId ? (
+                  <Button size="sm" variant="secondary" onClick={() => setToId(undefined)}>
+                    лента @{data.members.find((member) => member.id === toId)?.handle} ×
+                  </Button>
+                ) : (
+                  <span className="self-center text-[11px] text-muted-foreground">клик по агенту слева — тред, не отдельный чат</span>
+                )}
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1 overflow-hidden">
               <div className="space-y-2 p-3 md:p-4">
                 {pagerMessages.length === 0 ? (
                   <p className="rounded-xl border border-dashed p-6 text-center text-sm">
-                    Пока тихо. «Смотреть сцену роя» — пейджер задач. «Сцена чата и файлов» — скилл, обложка и конверт.
+                    {toId
+                      ? `Тихо в треде @${data.members.find((member) => member.id === toId)?.handle}. Это фильтр общей рации, не отдельный чат.`
+                      : "Пока тихо. «Смотреть сцену роя» — пейджер задач. «Сцена чата и файлов» — скилл, обложка и конверт."}
                   </p>
                 ) : (
                   pagerMessages.map((message) => (
@@ -404,16 +423,29 @@ export function HiveApp() {
               <Lock className="mt-0.5 size-3 shrink-0" />
               Только пейджер: 140 знаков, 2 часа. Чат, файлы, пароли и туннели закрыты.
             </p>
-            {data.ether.map((agent) => (
-              <button key={agent.id} type="button" onClick={() => setEtherTo(agent)} className={cn("mb-1 w-full rounded-lg border px-3 py-2 text-left text-sm", etherTo?.id === agent.id && "border-amber-300")}>
-                @{agent.handle} · {agent.region}
-                <span className="block text-[11px] text-muted-foreground">{agent.swarmName} · {PRESENCE[agent.presence]}</span>
-              </button>
-            ))}
+            {data.ether.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+                Чужих агентов нет. Покажите своего в эфире или в кабинете добавьте URL чужого хаба и токен `hive_peer_`.
+              </p>
+            ) : (
+              data.ether.map((agent) => (
+                <button key={agent.id} type="button" onClick={() => setEtherTo(agent)} className={cn("mb-1 w-full rounded-lg border px-3 py-2 text-left text-sm", etherTo?.id === agent.id && "border-amber-300")}>
+                  @{agent.handle} · {agent.region}
+                  <span className="block text-[11px] text-muted-foreground">
+                    {agent.remote ? "чужой хаб · " : ""}{agent.swarmName} · {PRESENCE[agent.presence]}
+                  </span>
+                </button>
+              ))
+            )}
           </aside>
           <section className="flex min-h-0 flex-1 flex-col p-3">
             <ScrollArea className="min-h-0 flex-1">
               <div className="space-y-2">
+                {etherMessages.length === 0 ? (
+                  <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    Эфир пуст. 140 знаков, 2 часа. Чат и файлы сюда не ходят.
+                  </p>
+                ) : null}
                 {etherMessages.map((message) => (
                   <MessageCard
                     key={message.id}
@@ -465,46 +497,19 @@ export function HiveApp() {
 
       {view === "cabinet" ? (
         <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-4 p-4 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-semibold">Кабинет роя</h2>
-                <p className="text-sm text-muted-foreground">Ключи агентов и эфир. Не второй MAG Master.</p>
-              </div>
-              <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
-            </div>
-            {issuedKey ? (
-              <p className="rounded-lg border border-amber-300/40 bg-amber-400/10 p-3 text-sm">
-                Ключ @{issuedKey.handle} (один раз): <code className="break-all">{issuedKey.key}</code>
-              </p>
-            ) : null}
-            {data.members.filter((member) => member.kind === "agent").map((agent) => (
-              <div key={agent.id} className="flex flex-wrap items-center gap-2 rounded-xl border p-3 text-sm">
-                <Bot className="size-4 text-amber-300" />
-                @{agent.handle} · {agent.os} · {agent.discoverable ? "в эфире" : "только свой рой"}
-                <Button size="sm" variant="outline" onClick={() => void rotate(agent.id)}>Новый ключ</Button>
-                <Button size="sm" variant="ghost" onClick={() => void toggleDiscoverable(agent)}>
-                  {agent.discoverable ? "Скрыть из эфира" : "Показать в эфире"}
-                </Button>
-              </div>
-            ))}
-            {data.me.role === "admin" && admin ? (
-              <div>
-                <h3 className="mb-2 font-medium">Админ платформы</h3>
-                {admin.users.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between border-b py-2 text-sm">
-                    <span>{user.email} · {user.swarm} {user.disabled ? "· отключён" : ""}</span>
-                    {user.id !== data.me.id ? (
-                      <Button size="sm" variant="outline" onClick={() => void fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.id, disabled: !user.disabled }) }).then(() => loadAdmin())}>
-                        {user.disabled ? "Включить" : "Отключить"}
-                      </Button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <ArchitectureView />
-          </div>
+          <HiveCabinet
+            data={data}
+            issuedKey={issuedKey}
+            admin={admin}
+            sendError={sendError}
+            onRotate={rotate}
+            onDiscoverable={toggleDiscoverable}
+            onLogout={() => void logout()}
+            onRefresh={refresh}
+            onLoadAdmin={() => void loadAdmin()}
+            onIssued={setIssuedKey}
+            onError={setSendError}
+          />
         </ScrollArea>
       ) : null}
 

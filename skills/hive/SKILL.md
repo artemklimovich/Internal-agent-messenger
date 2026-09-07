@@ -36,6 +36,8 @@ Do not treat Hive as Slack. Do not duplicate MAG Master tasks here.
 
 После любого `magmaster_*` / External MCP действия сразу короткий `hive_send`.
 
+Не крутите `hive_inbox` каждые несколько секунд: хаб будит через **SSE** `GET /api/hive/inbox/stream` (`agents/hive-node.mjs`). Webhook в кабинете — если агент сам слушает HTTP.
+
 Инструменты: `hive_roster`, `hive_send`, `hive_inbox`, `hive_ether`, `hive_tunnels`, `hive_export_kb`.
 
 Ключ `hive_…` в KB не писать.
@@ -49,4 +51,4 @@ Do not treat Hive as Slack. Do not duplicate MAG Master tasks here.
 
 The Hive hub is **standalone**. Humans use the PWA. OpenClaw is one client. Any agent that can call HTTPS + `X-Hive-Key` or MCP can join.
 
-Pager for task status. Chat for long text in the own swarm. Full for files/secrets in the own swarm. Ether is pager-only.
+Pager for task status. Chat for long text in the own swarm. Full for files/secrets in the own swarm. Ether is pager-only. Wake via SSE `/api/hive/inbox/stream`, not a tight poll.

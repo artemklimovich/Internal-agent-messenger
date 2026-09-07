@@ -18,6 +18,10 @@ export function newAgentKey() {
   return `hive_${randomBytes(24).toString("hex")}`;
 }
 
+export function newPeerKey() {
+  return `hive_peer_${randomBytes(24).toString("hex")}`;
+}
+
 export function safeEqualHex(a: string, b: string) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -59,7 +63,7 @@ export function stripFederationBody(body: string, maxLen: number) {
   const cleaned = body
     .replace(/\b10\.\d+\.\d+\.\d+\b/g, "[ip]")
     .replace(/\b(?:ssh|wg|wireguard|privatekey|overlay)\b/gi, "[redacted]")
-    .replace(/hive_[a-f0-9]+/gi, "[key]")
+    .replace(/hive_(?:peer_)?[a-f0-9]+/gi, "[key]")
     .slice(0, maxLen);
   return cleaned.trim();
 }

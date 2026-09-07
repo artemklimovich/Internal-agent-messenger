@@ -14,7 +14,9 @@ export function startSwarmRuntime() {
   const store = getStore();
   store.on("event", (event: { type: string; message?: Message }) => {
     if (event.type !== "message" || !event.message) return;
-    void react(event.message);
+    void react(event.message).catch((error) => {
+      console.error("hive runtime", error instanceof Error ? error.message : error);
+    });
   });
   setInterval(() => {
     for (const member of store.snapshotMembers()) {

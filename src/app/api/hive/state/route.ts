@@ -13,10 +13,15 @@ export async function GET() {
     startSwarmRuntime();
     const session = await requireUser();
     const view = getStore().viewer(session.id);
+    const envMag = magConfig();
     return Response.json({
       ok: true,
-      mag: magConfig(),
       ...view,
+      mag: {
+        ...envMag,
+        ...view.mag,
+        hasKey: envMag.hasKey || Boolean(view.mag.connected),
+      },
       tunnels: view.tunnels.map((tunnel) => ({
         ...tunnel,
         sshCommand: sshReverseCommand(tunnel),

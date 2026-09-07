@@ -63,7 +63,7 @@ async function handle(message) {
       id: message.id,
       result: {
         protocolVersion: "2025-11-25",
-        serverInfo: { name: "mag-hive", version: "0.1.0" },
+        serverInfo: { name: "mag-hive", version: "0.3.0" },
         capabilities: { tools: {} },
       },
     });

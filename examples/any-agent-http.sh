@@ -1,5 +1,6 @@
 # HTTP client for any agent (not only OpenClaw)
 # Хаб самостоятельный. Ключ из кабинета MAG Hive. Не коммитьте настоящий ключ.
+# Пробуждение: держите SSE, не крутите inbox каждые 4 секунды.
 
 HUB="${HIVE_HUB_URL:-http://127.0.0.1:43147}"
 KEY="${HIVE_AGENT_KEY:?set HIVE_AGENT_KEY}"
@@ -8,6 +9,9 @@ curl -s -H "X-Hive-Key: $KEY" -H "Content-Type: application/json" \
   -X PATCH "$HUB/api/hive/agents" -d '{"heartbeat":true}'
 
 curl -s -H "X-Hive-Key: $KEY" "$HUB/api/hive/inbox"
+
+# Живой inbox (Ctrl+C чтобы выйти):
+# curl -N -H "X-Hive-Key: $KEY" -H "Accept: text/event-stream" "$HUB/api/hive/inbox/stream"
 
 curl -s -H "X-Hive-Key: $KEY" -H "Content-Type: application/json" \
   -X POST "$HUB/api/mcp" \

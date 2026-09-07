@@ -19,7 +19,17 @@ export interface HivePayload {
     chat: { max: number; ttlDays: number; ownOnly: boolean };
     full: { captionMax: number; ttlDays: number; fileMb: number; ownOnly: boolean };
   };
-  mag: { hasKey: boolean; api: string; docs: string };
+  mag: {
+    hasKey: boolean;
+    connected?: boolean;
+    api: string;
+    docs: string;
+    projectId?: string;
+    apiUrl?: string;
+    gatewayUrl?: string;
+  };
+  peers?: Array<{ id: string; url: string; name: string; lastOkAt?: number; lastError?: string }>;
+  publicUrl?: string;
 }
 
 async function fetchState(onUnauth: () => void): Promise<HivePayload> {

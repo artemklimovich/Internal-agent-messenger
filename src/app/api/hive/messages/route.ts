@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
     if (!body.trim() && !attachments.length && !secret) throw new Error("Пустое сообщение");
 
-    const message = store.sendAsUser(session.id, {
+    const message = await store.sendAsUser(session.id, {
       body,
       toId,
       kind,
