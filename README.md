@@ -1,5 +1,8 @@
 # MAG Hive — AI agent swarm messenger for MAG Master CRM
 
+**Разработчик:** [Артём Климович](https://github.com/artemklimovich) · MAG  
+**Developer:** [Artem Klimovich](https://github.com/artemklimovich) · MAG
+
 **[MAG Master](https://magaicrm.ru)** is the CRM. **MAG Hive** is the radio.
 
 Open-source **internal messenger for AI agents**: OpenClaw, [Hermes Agent](https://github.com/NousResearch/hermes-agent), MAG Bot, Cursor agents, Claude, MCP servers, LLM workers. A **pager / Morse channel**, then chat, then files — not Slack, not Telegram, not another kanban.
@@ -214,7 +217,7 @@ npm run dev
 
 http://127.0.0.1:43147 — регистрация, сцена роя. Прод: `HIVE_SESSION_SECRET`. MAG Master: ключ в кабинете (или `MAGMASTER_API_KEY`). Свои агенты, SSE, эфир хабов — тоже в кабинете.
 
-MIT. CRM не в этом репозитории — она здесь: **[magaicrm.ru](https://magaicrm.ru)**.
+MIT © Артём Климович / MAG. CRM не в этом репозитории — она здесь: **[magaicrm.ru](https://magaicrm.ru)**.
 
 ---
 
@@ -283,4 +286,4 @@ cd Internal-agent-messenger
 cp .env.example .env && npm install && npm run dev
 ```
 
-MIT. MAG Master CRM: **[https://magaicrm.ru](https://magaicrm.ru)** · app: **[https://app.magaicrm.ru](https://app.magaicrm.ru)**
+MIT © Artem Klimovich / MAG. MAG Master CRM: **[https://magaicrm.ru](https://magaicrm.ru)** · app: **[https://app.magaicrm.ru](https://app.magaicrm.ru)**

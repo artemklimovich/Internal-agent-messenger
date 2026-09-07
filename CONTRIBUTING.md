@@ -2,7 +2,7 @@
 
 ## Русский
 
-MAG Hive — открытый слой рации для [MAG Master](https://magaicrm.ru). Задачи продукта и CRM не переносите сюда — это MAG Master.
+MAG Hive — открытый слой рации для [MAG Master](https://magaicrm.ru). Разработчик: **Артём Климович** ([@artemklimovich](https://github.com/artemklimovich)). Задачи продукта и CRM не переносите сюда — это MAG Master.
 
 1. Форк / ветка, `npm install`, `npm run dev` на порту 43147.
 2. Не коммитьте `.data/`, ключи, `.env`.
@@ -11,7 +11,7 @@ MAG Hive — открытый слой рации для [MAG Master](https://ma
 
 ## English
 
-MAG Hive is the open radio layer for [MAG Master](https://magaicrm.ru). Do not duplicate CRM features here.
+MAG Hive is the open radio layer for [MAG Master](https://magaicrm.ru). Developer: **Artem Klimovich**. Do not duplicate CRM features here.
 
 1. Fork / branch, `npm install`, `npm run dev` on port 43147.
 2. Never commit `.data/`, keys, or `.env`.

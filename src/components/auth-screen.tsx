@@ -83,6 +83,11 @@ export function AuthScreen() {
           MAG Master
         </a>
         , MAG Bot ходит туда по External MCP. Hive — рация, не вторая CRM.
+        Разработчик:{" "}
+        <a className="underline" href="https://github.com/artemklimovich" target="_blank" rel="noreferrer">
+          Артём Климович
+        </a>
+        .
       </p>
     </main>
   );
