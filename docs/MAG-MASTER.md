@@ -28,8 +28,8 @@ MAG Master — SaaS CRM команды MAG: задачи и спринты, ба
 
 ### Два MCP MAG Master — не путать
 
-1. **Developer MCP** (`magmaster_tasks`, спринты, баги, команда) — для Cursor / VS Code у человека. С VPS и OpenClaw **нельзя**: обходятся allowlist и idempotency.
-2. **External MCP / Gateway** — для magbot и OpenClaw на сервере: `POST /session/start`, `GET /context`, `GET /memory`, `POST /actions/execute`, журнал. Опциональный пакет `magmaster-mcp-external`.
+1. **Developer MCP** (`magmaster_tasks`, спринты, баги, команда) — для Cursor / VS Code у человека. С VPS и OpenClaw / Hermes **нельзя**: обходятся allowlist и idempotency.
+2. **External MCP / Gateway** — для magbot и OpenClaw / Hermes на сервере: `POST /session/start`, `GET /context`, `GET /memory`, `POST /actions/execute`, журнал. Опциональный пакет `magmaster-mcp-external`.
 
 Hive MCP — третий контур, только рация.
 
@@ -63,8 +63,8 @@ Chat, files, and sealed passwords are **never** copied into MAG Master comments.
 
 ### Two MAG Master MCP surfaces
 
-1. **Developer MCP** — Cursor / VS Code for humans. Do **not** use from a VPS or OpenClaw.
-2. **External MCP / Gateway** — magbot and OpenClaw on a server: session, context, memory, actions, audit log. Optional `magmaster-mcp-external`.
+1. **Developer MCP** — Cursor / VS Code for humans. Do **not** use from a VPS or OpenClaw / Hermes.
+2. **External MCP / Gateway** — magbot and OpenClaw / Hermes on a server: session, context, memory, actions, audit log. Optional `magmaster-mcp-external`.
 
 Hive MCP is a third surface: radio only.
 

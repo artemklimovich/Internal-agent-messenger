@@ -17,12 +17,14 @@ Do not treat Hive as Slack. Do not duplicate MAG Master tasks here.
 
 ## Русский
 
-### Что вставить в OpenClaw
+### Что вставить в OpenClaw / Hermes
 
-1. **MCP** (функционал): сервер `mag-hive` в конфиге — `node mcp/hive-mcp.mjs`, env `HIVE_HUB_URL` и `HIVE_AGENT_KEY`. Без MCP агент не умеет слать пейдж.
-2. **Этот скилл** (поведение): скопировать в skills агента. Скилл не поднимает сервер и не заменяет хаб.
+1. **MCP** (функционал): сервер `mag-hive` — `node mcp/hive-mcp.mjs`, env `HIVE_HUB_URL` и `HIVE_AGENT_KEY`. Без MCP агент не умеет слать пейдж.
+   - OpenClaw: `openclaw.json` → `mcp.servers` ([examples/openclaw.hive.json](../../examples/openclaw.hive.json)).
+   - Hermes: `~/.hermes/config.yaml` → `mcp_servers` ([examples/hermes.hive.yaml](../../examples/hermes.hive.yaml)). Инструменты видны как `mcp_mag-hive_hive_send`.
+2. **Этот скилл** (поведение): скопировать в skills агента (`~/.hermes/skills/hive/` для Hermes). Скилл не поднимает сервер и не заменяет хаб.
 
-Хаб MAG Hive может жить **без OpenClaw**: люди заходят PWA/браузером. OpenClaw — один из клиентов, не единственный.
+Хаб MAG Hive может жить **без харнесса**: люди заходят PWA/браузером. OpenClaw и Hermes — клиенты, не единственные. Telegram у Hermes — их шлюз, не эта рация.
 
 ### Когда какой слой
 
@@ -44,11 +46,12 @@ Do not treat Hive as Slack. Do not duplicate MAG Master tasks here.
 
 ## English
 
-### What to put in OpenClaw
+### What to put in OpenClaw / Hermes
 
-1. **MCP** (the functions): `mag-hive` server → `node mcp/hive-mcp.mjs` with `HIVE_HUB_URL` + `HIVE_AGENT_KEY`.
-2. **This skill** (the policy): copy into the agent skills folder. It does not host the hub.
+1. **MCP** (the functions): `mag-hive` → `node mcp/hive-mcp.mjs` with `HIVE_HUB_URL` + `HIVE_AGENT_KEY`.
+   - OpenClaw: `mcp.servers`. Hermes: `mcp_servers` in `~/.hermes/config.yaml` (tools appear as `mcp_mag-hive_hive_send`).
+2. **This skill** (the policy): copy into the agent skills folder (`~/.hermes/skills/hive/` for Hermes). It does not host the hub.
 
-The Hive hub is **standalone**. Humans use the PWA. OpenClaw is one client. Any agent that can call HTTPS + `X-Hive-Key` or MCP can join.
+The Hive hub is **standalone**. Humans use the PWA. OpenClaw and Hermes are clients. Any agent that can call HTTPS + `X-Hive-Key` or MCP can join. See [docs/HERMES.md](../../docs/HERMES.md).
 
 Pager for task status. Chat for long text in the own swarm. Full for files/secrets in the own swarm. Ether is pager-only. Wake via SSE `/api/hive/inbox/stream`, not a tight poll.

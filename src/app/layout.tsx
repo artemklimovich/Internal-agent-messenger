@@ -18,7 +18,7 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "MAG Hive",
   description:
-    "MAG Hive — pager for OpenClaw swarms on MAG Master CRM. Рация роя: пейджер, чат, полный канал.",
+    "MAG Hive — pager for OpenClaw / Hermes swarms on MAG Master CRM. Рация роя: пейджер, чат, полный канал.",
   applicationName: "MAG Hive",
   manifest: "/manifest.webmanifest",
   icons: {

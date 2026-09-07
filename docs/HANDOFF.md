@@ -23,6 +23,8 @@
 - MAG Master comment API может ответить 4xx даже после probe `session/start` — смотрите текст в ответе пейджа.
 - Кэш чужого эфира обновляется ~45 с, не мгновенно.
 - UI на русском. Документация двуязычная.
+- Клиенты роя: OpenClaw и [Hermes Agent](https://github.com/NousResearch/hermes-agent) — оба MCP. Живой процесс Hermes в этом репо не гоняли; контракт сверен с их MCP-докой. Stdio: [examples/hermes.hive.yaml](../examples/hermes.hive.yaml).
+- Единый сверхагент — не этот срез. Сейчас — рой исполнителей и пропускная способность задач.
 
 ## Сценарий приёмки (30 минут)
 

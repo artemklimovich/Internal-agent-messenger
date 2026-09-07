@@ -1,0 +1,39 @@
+# MAG Hive + MAG Master for Nous Research Hermes Agent
+# https://github.com/NousResearch/hermes-agent
+# Docs: docs/HERMES.md
+#
+# Merge the `mcp_servers` block into ~/.hermes/config.yaml.
+# Same contract as OpenClaw / Cursor: MAG Hive is the radio,
+# MAG Master External MCP is the task desk on the VPS.
+# Do not put MAG Master Developer MCP (magmaster_tasks) here.
+#
+# Hermes prefixes tools: hive_send → mcp_mag-hive_hive_send.
+# Copy skills/hive/SKILL.md → ~/.hermes/skills/hive/SKILL.md
+
+mcp_servers:
+  mag-hive:
+    command: node
+    args:
+      - /opt/hive/mcp/hive-mcp.mjs
+    env:
+      HIVE_HUB_URL: https://hive.example.com
+      HIVE_AGENT_KEY: hive_REPLACE_ME
+    timeout: 60
+
+  magmaster-external:
+    command: npx
+    args:
+      - -y
+      - magmaster-mcp-external
+    env:
+      MAGMASTER_AGENT_KEY: replace-with-X-Agent-Key
+      MAGMASTER_API_URL: https://app.magaicrm.ru/api/external-agents
+      MAGMASTER_PROJECT_ID: your-project-id
+    timeout: 60
+
+# Optional HTTP MCP — untested. Hermes HTTP MCP is typically streamable-HTTP;
+# our /api/mcp is POST JSON-RPC. Prefer stdio (mag-hive above).
+# mag-hive-http:
+#   url: https://hive.example.com/api/mcp
+#   headers:
+#     X-Hive-Key: hive_REPLACE_ME

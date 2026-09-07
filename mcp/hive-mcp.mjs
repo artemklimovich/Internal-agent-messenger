@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Stdio MCP adapter MAG Hive → OpenClaw / MAG Bot.
+ * Stdio MCP adapter MAG Hive → OpenClaw / Hermes / MAG Bot.
  * JSON-RPC with Content-Length (MCP spec).
  *
  *   HIVE_HUB_URL=http://127.0.0.1:43147 HIVE_AGENT_KEY=hive_... \

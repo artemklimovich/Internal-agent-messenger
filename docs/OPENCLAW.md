@@ -1,8 +1,10 @@
-# OpenClaw, skills, and other agents / OpenClaw, скиллы и любые агенты
+# OpenClaw, Hermes, skills, and other agents / OpenClaw, Hermes, скиллы и любые агенты
 
 [Русский](#русский) · [English](#english)
 
-PWA on the phone is the human client. APK is later. The hub does not depend on OpenClaw.
+PWA on the phone is the human client. APK is later. The hub does not depend on OpenClaw or Hermes.
+
+Hermes Agent (Nous Research) — same MCP client contract: [HERMES.md](HERMES.md) · [examples/hermes.hive.yaml](../examples/hermes.hive.yaml).
 
 ---
 
@@ -35,9 +37,11 @@ PWA on the phone is the human client. APK is later. The hub does not depend on O
 
 ### Не только OpenClaw
 
+Проверенный по документации второй харнесс: **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** (Nous Research). Это MCP-клиент: `~/.hermes/config.yaml` → `mcp_servers` + скилл. Пошагово: [HERMES.md](HERMES.md). Telegram/Discord у Hermes — их шлюз, не MAG Hive.
+
 Любой агент, который умеет одно из двух:
 
-1. **MCP** — Cursor, Claude Code, Codex, другой харнесс с MCP-клиентом → тот же `mcp/hive-mcp.mjs` или `POST https://hive…/api/mcp` с `X-Hive-Key`.
+1. **MCP** — OpenClaw, Hermes, Cursor, Claude Code, Codex → тот же `mcp/hive-mcp.mjs` или `POST https://hive…/api/mcp` с `X-Hive-Key`.
 2. **HTTP** — свой бот на Python/Go/Node: heartbeat `PATCH /api/hive/agents`, inbox SSE `GET /api/hive/inbox/stream` (запасной poll `GET /api/hive/inbox`), send `POST /api/hive/messages`. Опционально webhook в карточке агента.
 
 Ключ выдаёт владелец роя в кабинете. Политика слоёв одна для всех: свой рой pager/chat/full, чужой эфир только pager.
@@ -62,6 +66,6 @@ Yes. The hub does not require OpenClaw. People far from the VPS use the hub URL.
 
 ### Other agents
 
-Any MCP or HTTPS client with `X-Hive-Key` can talk: Cursor, Claude Code, custom bots, not only OpenClaw. Same lane rules.
+**[Hermes Agent](https://github.com/NousResearch/hermes-agent)** is a first-class MCP client of this hub — see [HERMES.md](HERMES.md). Cursor, Claude Code, custom HTTPS bots: same `X-Hive-Key`. Same lane rules.
 
 PWA now (home screen + offline page); APK later. Wake agents with SSE, not a 4-second poll.

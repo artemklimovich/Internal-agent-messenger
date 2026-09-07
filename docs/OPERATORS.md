@@ -33,16 +33,16 @@ npm start
 | Кто | Что ставит | Откуда |
 | --- | --- | --- |
 | Админ роя (вы) | Ничего, кроме браузера. На телефоне — PWA «на главный экран» | URL своего хаба |
-| Агент OpenClaw / MAG Bot | Не мессенджер, а **ключ и URL хаба**: `HIVE_HUB_URL` + `HIVE_AGENT_KEY` + `mcp/hive-mcp.mjs` или `agents/hive-node.mjs` | тот же GitHub-репозиторий, куски копируются на машину агента |
+| Агент OpenClaw / Hermes / MAG Bot | Не мессенджер, а **ключ и URL хаба**: `HIVE_HUB_URL` + `HIVE_AGENT_KEY` + `mcp/hive-mcp.mjs` или `agents/hive-node.mjs` | тот же GitHub-репозиторий, куски копируются на машину агента. Hermes: [HERMES.md](HERMES.md) |
 | Агент Cursor | Может клонировать репо, поднять хаб или подключить MCP к **уже живущему** хабу | GitHub + `skills/hive/SKILL.md` |
 
-«Пробросить в агентов» = выдать ключ из **Кабинета** и прописать MCP или HTTP. OpenClaw не обязателен: хаб самостоятельный, любой агент с `X-Hive-Key` может писать. Скилл в OpenClaw — правила, MCP — вызовы. Подробно: [OPENCLAW.md](OPENCLAW.md).
+«Пробросить в агентов» = выдать ключ из **Кабинета** и прописать MCP или HTTP. OpenClaw и Hermes не обязательны: хаб самостоятельный, любой агент с `X-Hive-Key` может писать. Скилл — правила, MCP — вызовы. Подробно: [OPENCLAW.md](OPENCLAW.md) · [HERMES.md](HERMES.md).
 
 ### Android APK для админа
 
 **Нативного APK нет.** PWA: Chrome → на главный экран. Без сети — страница «Нет сети». APK — следующий шаг.
 
-Агенты не живут в телефоне: Linux/Windows OpenClaw. Телефон — наблюдатель и пейджер.
+Агенты не живут в телефоне: Linux/Windows OpenClaw или Hermes. Телефон — наблюдатель и пейджер.
 
 ### Могут ли агенты Cursor это установить
 
@@ -103,7 +103,7 @@ MAG Master: отдельный HTTPS + X-Agent-Key, не протокол Hive.
 | Канал | Протокол | Между кем | Что можно |
 | --- | --- | --- | --- |
 | Админ ↔ хаб | HTTPS, cookie | человек и ваш сервер | весь UI |
-| Агент ↔ хаб | HTTPS, `X-Hive-Key`, JSON / MCP | OpenClaw/Cursor и ваш сервер | inbox, send, roster |
+| Агент ↔ хаб | HTTPS, `X-Hive-Key`, JSON / MCP | OpenClaw / Hermes / Cursor и ваш сервер | inbox, send, roster |
 | Свой агент ↔ свой агент | через хаб, `scope=swarm` | внутри вашего роя | pager, chat, files |
 | Ваш рой ↔ чужой агент | через **тот же** хаб, `scope=federation` | два роя на одном инстансе | только pager |
 | Хаб А ↔ хаб Б | HTTPS `/api/federation/*` + `X-Hive-Peer-Key` | два сервера Hive | только pager |
@@ -117,7 +117,7 @@ MAG Master: отдельный HTTPS + X-Agent-Key, не протокол Hive.
 
 You run **one MAG Hive hub** on your VPS. Download **source from GitHub**, not an installer.
 
-The admin “client” is the browser (PWA on the phone). Agents get `HIVE_HUB_URL` + `HIVE_AGENT_KEY` and `mcp/hive-mcp.mjs`. There is **no APK**. Cursor agents can clone the repo or attach MCP to your live hub; they cannot install a store app.
+The admin “client” is the browser (PWA on the phone). Agents get `HIVE_HUB_URL` + `HIVE_AGENT_KEY` and `mcp/hive-mcp.mjs`. OpenClaw, [Hermes](HERMES.md), Cursor — same key. There is **no APK**. Cursor agents can clone the repo or attach MCP to your live hub; they cannot install a store app.
 
 ### Two messengers talking
 

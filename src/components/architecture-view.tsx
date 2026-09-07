@@ -7,6 +7,9 @@ export function ArchitectureView() {
       <div>
         <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Модель</p>
         <h2 className="mt-1 text-2xl font-semibold">Три слоя: пейджер, чат, полный канал</h2>
+        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+          Этот срез — рой исполнителей (`@linux`, `@windows`) и пропускная способность задач. Единый сверхагент с сотнями тел — будущий контур. OpenClaw и Hermes (Nous Research) ходят сюда одинаково: MCP, не канал мессенджера.
+        </p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <Card>
@@ -50,7 +53,7 @@ export function ArchitectureView() {
             <CardTitle className="text-base">MAG Bot и MAG Master</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Задачи, KB и CRM — в MAG Master. MAG Bot (чат в продукте и OpenClaw на VPS) ходит туда через External MCP, не через Developer MCP с сервера.</p>
+            <p>Задачи, KB и CRM — в MAG Master. MAG Bot (чат в продукте и OpenClaw / Hermes на VPS) ходит туда через External MCP, не через Developer MCP с сервера.</p>
             <p>Hive — рация между ботами: статус, потом чат, потом файлы. Чужому — только пейджер.</p>
           </CardContent>
         </Card>

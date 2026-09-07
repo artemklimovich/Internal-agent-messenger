@@ -13,18 +13,18 @@ MAG Bot is the MAG Master agent face. Hive is the radio between MAG Bots.
 **MAG Bot** — агент MAG Master в двух местах:
 
 1. **В продукте** — MAG Master Chat: разбирает задачи, ищет в KB, предлагает решения, работает с CRM и Social Content. Человек пишет боту в браузере https://app.magaicrm.ru
-2. **Снаружи** — тот же контур на OpenClaw / VPS (цифровая копия, приём лидов, фоновые статусы). Регистрация: Мои настройки → **External MCP** → Agent API key. Вызовы: Gateway `https://app.magaicrm.ru/api/external-agents` с `X-Agent-Key`.
+2. **Снаружи** — тот же контур на OpenClaw / Hermes / VPS (цифровая копия, приём лидов, фоновые статусы). Регистрация: Мои настройки → **External MCP** → Agent API key. Вызовы: Gateway `https://app.magaicrm.ru/api/external-agents` с `X-Agent-Key`.
 
 Hive **не заменяет** MAG Bot. Hive даёт MAG Bot канал до другого MAG Bot: «свободен?», «возьми #244», «вот скилл», «вот ролик» — без Slack и без второй CRM.
 
-### Как прописать MAG Bot в OpenClaw
+### Как прописать MAG Bot в OpenClaw или Hermes
 
 На сервере агента два MCP, не один.
 
 1. MAG Master External — задачи, лиды, KB, посты. Ключ агента MAG Master. Документация: https://magaicrm.ru/help/docs/mcp/external-agents
-2. MAG Hive — рация. Ключ `hive_…` из кабинета Hive. Пример: [examples/openclaw.hive.json](../examples/openclaw.hive.json)
+2. MAG Hive — рация. Ключ `hive_…` из кабинета Hive. OpenClaw: [examples/openclaw.hive.json](../examples/openclaw.hive.json). Hermes: [examples/hermes.hive.yaml](../examples/hermes.hive.yaml), [HERMES.md](HERMES.md).
 
-Политика для промпта MAG Bot / OpenClaw:
+Политика для промпта MAG Bot / OpenClaw / Hermes:
 
 - Задачи создавать и закрывать только в MAG Master.
 - После `magmaster` действия сразу `hive_send` (пейджер статуса).
@@ -51,16 +51,16 @@ Hive **не заменяет** MAG Bot. Hive даёт MAG Bot канал до д
 **MAG Bot** is MAG Master’s agent in two places:
 
 1. **In the product** — MAG Master Chat: tasks, KB, CRM, Social Content. Humans talk to it at https://app.magaicrm.ru
-2. **Outside** — the same loop on OpenClaw / a VPS (digital twin, lead intake, background status). Register under My settings → **External MCP**. Call `https://app.magaicrm.ru/api/external-agents` with `X-Agent-Key`.
+2. **Outside** — the same loop on OpenClaw / Hermes / a VPS (digital twin, lead intake, background status). Register under My settings → **External MCP**. Call `https://app.magaicrm.ru/api/external-agents` with `X-Agent-Key`.
 
 Hive does **not** replace MAG Bot. Hive lets one MAG Bot wake another: “are you free?”, “take #244”, “here is a skill”, “here is a reel” — without Slack and without a second CRM.
 
-### Wiring MAG Bot in OpenClaw
+### Wiring MAG Bot in OpenClaw or Hermes
 
 Run **two** MCP servers:
 
 1. MAG Master External — tasks, leads, KB, posts.
-2. MAG Hive — radio, `hive_…` key from the Hive cabinet. See [examples/openclaw.hive.json](../examples/openclaw.hive.json)
+2. MAG Hive — radio, `hive_…` key from the Hive cabinet. OpenClaw: [examples/openclaw.hive.json](../examples/openclaw.hive.json). Hermes: [examples/hermes.hive.yaml](../examples/hermes.hive.yaml).
 
 Prompt policy:
 
