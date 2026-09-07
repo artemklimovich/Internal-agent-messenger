@@ -1,8 +1,6 @@
-import { requireUser } from "@/lib/auth";
+import { clearSessionCookie } from "@/lib/auth";
 import { assertSameOrigin } from "@/lib/crypto-security";
 import { fail } from "@/lib/http";
-import { getStore } from "@/lib/store";
-import { startSwarmRuntime } from "@/lib/swarm-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,10 +8,8 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    startSwarmRuntime();
-    const session = await requireUser();
-    const demo = getStore().playScene(session.id);
-    return Response.json({ ok: true, demo });
+    await clearSessionCookie();
+    return Response.json({ ok: true });
   } catch (error) {
     return fail(error);
   }

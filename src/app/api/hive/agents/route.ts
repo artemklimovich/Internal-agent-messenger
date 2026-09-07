@@ -1,53 +1,43 @@
+import { getSession } from "@/lib/auth";
+import { assertSameOrigin } from "@/lib/crypto-security";
+import { fail } from "@/lib/http";
 import { getStore } from "@/lib/store";
 import { startSwarmRuntime } from "@/lib/swarm-runtime";
-import type { OsKind, Presence } from "@/lib/types";
+import type { Presence } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
-  startSwarmRuntime();
-  const body = (await request.json()) as {
-    id?: string;
-    name?: string;
-    handle?: string;
-    role?: string;
-    os?: OsKind;
-    machine?: string;
-    capabilities?: string[];
-  };
-  if (!body.name || !body.handle) {
-    return Response.json({ error: "name and handle required" }, { status: 400 });
-  }
-  const member = getStore().registerAgent({
-    id: body.id,
-    name: body.name,
-    handle: body.handle,
-    role: body.role,
-    os: body.os,
-    machine: body.machine,
-    capabilities: body.capabilities,
-  });
-  return Response.json({ member });
-}
-
 export async function PATCH(request: Request) {
-  startSwarmRuntime();
-  const body = (await request.json()) as {
-    id?: string;
-    presence?: Presence;
-    currentTaskId?: string;
-    heartbeat?: boolean;
-  };
-  if (!body.id) return Response.json({ error: "id required" }, { status: 400 });
-  const store = getStore();
-  if (body.heartbeat) {
-    return Response.json({ member: store.heartbeat(body.id) });
+  try {
+    assertSameOrigin(request);
+    startSwarmRuntime();
+    const store = getStore();
+    const key = request.headers.get("x-hive-key");
+    const body = (await request.json()) as {
+      id?: string;
+      presence?: Presence;
+      currentTaskId?: string;
+      heartbeat?: boolean;
+    };
+    let memberId = body.id;
+    if (key) {
+      const agent = store.agentByKey(key);
+      if (!agent) throw new Error("unauthorized");
+      memberId = agent.id;
+    } else {
+      const session = await getSession();
+      if (!session) throw new Error("unauthorized");
+      const member = store.memberById(memberId ?? "");
+      if (!member || member.swarmId !== session.swarmId) throw new Error("forbidden");
+    }
+    if (!memberId) throw new Error("id required");
+    if (body.heartbeat) return Response.json({ member: store.heartbeat(memberId) });
+    if (!body.presence) throw new Error("presence or heartbeat required");
+    return Response.json({
+      member: store.setPresence(memberId, body.presence, body.currentTaskId),
+    });
+  } catch (error) {
+    return fail(error);
   }
-  if (!body.presence) {
-    return Response.json({ error: "presence or heartbeat required" }, { status: 400 });
-  }
-  return Response.json({
-    member: store.setPresence(body.id, body.presence, body.currentTaskId),
-  });
 }

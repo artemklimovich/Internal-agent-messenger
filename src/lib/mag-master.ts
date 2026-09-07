@@ -69,15 +69,15 @@ export async function syncMessageToMag(message: Message): Promise<MagSyncResult>
   }
 }
 
-export async function exportRegistryToMag(): Promise<MagSyncResult> {
+export async function exportRegistryToMag(swarmId: string): Promise<MagSyncResult> {
   if (!MAG_KEY) {
     return {
       attempted: false,
       ok: false,
-      detail: "Нет API-ключа MAG Master. Реестр можно скопировать из Hive и вставить в KB вручную.",
+      detail: "Нет API-ключа MAG Master. Реестр своего роя скопируйте из кабинета в KB вручную.",
     };
   }
-  const markdown = getStore().exportKnowledgeBase();
+  const markdown = getStore().exportKnowledgeBase(swarmId);
   try {
     const response = await fetch(
       `${MAG_API.replace(/\/$/, "")}/knowledge-base`,

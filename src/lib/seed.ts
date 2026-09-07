@@ -1,280 +1,254 @@
-import type { HiveState } from "./types";
+import { nid } from "./id";
+import type { Member, Room, Swarm, Tunnel, User, World } from "./types";
+import { SCHEMA_VERSION } from "./types";
 
-const now = () => Date.now();
-const minutesAgo = (m: number) => now() - m * 60_000;
-
-export function createSeed(): HiveState {
-  const t = now();
-  return {
-    space: {
-      name: "MAG Master · рой исполнителей",
-      magProjectId: "mag-hive",
-      magCompany: "MAG",
-      magApi: "https://app.magaicrm.ru/api",
-    },
-    members: [
-      {
-        id: "human-artem",
-        kind: "human",
-        name: "Артём",
-        handle: "artem",
-        role: "Оператор роя",
-        os: "linux",
-        presence: "free",
-        lastSeenAt: t,
-        machine: "ops-linux",
-        capabilities: ["задачи", "KB", "эскалация"],
-        magProjectId: "mag-hive",
-      },
-      {
-        id: "agent-orchestrator",
-        kind: "agent",
-        name: "Orchestrator",
-        handle: "orchestrator",
-        role: "Диспетчер OpenClaw",
-        os: "linux",
-        presence: "busy",
-        currentTaskId: "242",
-        lastSeenAt: t,
-        machine: "magtask / Ubuntu 24.04",
-        capabilities: ["MCP MAG Master", "постановка задач", "маршрутизация"],
-        simulated: true,
-        magProjectId: "mag-hive",
-      },
-      {
-        id: "agent-linux",
-        kind: "agent",
-        name: "Linux Executor",
-        handle: "linux",
-        role: "Исполнитель · код и сервер",
-        os: "linux",
-        presence: "free",
-        lastSeenAt: t,
-        machine: "devbox / Ubuntu 24.04",
-        capabilities: ["git", "node", "деплой", "SSH"],
-        simulated: true,
-        magProjectId: "mag-hive",
-      },
-      {
-        id: "agent-windows",
-        kind: "agent",
-        name: "Windows Builder",
-        handle: "windows",
-        role: "Исполнитель · сборка Windows",
-        os: "windows",
-        presence: "free",
-        lastSeenAt: minutesAgo(2),
-        machine: "win-build / Windows 11",
-        capabilities: ["msbuild", "подписание", "WG overlay"],
-        simulated: true,
-        magProjectId: "mag-hive",
-      },
-      {
-        id: "agent-android",
-        kind: "agent",
-        name: "Android Eye",
-        handle: "android",
-        role: "Наблюдатель на телефоне",
-        os: "android",
-        presence: "free",
-        lastSeenAt: minutesAgo(1),
-        machine: "Pixel / MAG Hive PWA",
-        capabilities: ["инбокс", "presence", "эскалация человеку"],
-        simulated: true,
-        magProjectId: "mag-hive",
-      },
-    ],
-    rooms: [
-      {
-        id: "swarm",
-        type: "swarm",
-        title: "Рой",
-        subtitle: "Общий канал людей и агентов",
-        memberIds: [
-          "human-artem",
-          "agent-orchestrator",
-          "agent-linux",
-          "agent-windows",
-          "agent-android",
-        ],
-      },
-      {
-        id: "task-241",
-        type: "task",
-        title: "#241 Лендинг MAG Hive",
-        subtitle: "MAG Master · в работе",
-        taskId: "241",
-        memberIds: ["human-artem", "agent-orchestrator", "agent-linux"],
-      },
-      {
-        id: "task-242",
-        type: "task",
-        title: "#242 Windows-нода",
-        subtitle: "MAG Master · очередь",
-        taskId: "242",
-        memberIds: ["human-artem", "agent-orchestrator", "agent-windows"],
-      },
-      {
-        id: "dm-artem-orchestrator",
-        type: "dm",
-        title: "Артём ↔ Orchestrator",
-        memberIds: ["human-artem", "agent-orchestrator"],
-      },
-    ],
-    messages: [
-      {
-        id: "m1",
-        roomId: "swarm",
-        fromId: "agent-orchestrator",
-        toId: "agent-linux",
-        kind: "task_assigned",
-        body: "@linux поставил задачу #241 «Сверстать операционный лендинг MAG Hive». Жду исполнения.",
-        taskRef: {
-          magTaskId: "241",
-          title: "Сверстать операционный лендинг MAG Hive",
-          status: "in_progress",
-        },
-        createdAt: minutesAgo(18),
-      },
-      {
-        id: "m2",
-        roomId: "swarm",
-        fromId: "agent-linux",
-        toId: "agent-orchestrator",
-        kind: "progress",
-        body: "Взял #241. Каркас страницы и композер уже есть, дальше — карточки статусов.",
-        taskRef: { magTaskId: "241", title: "Сверстать операционный лендинг MAG Hive" },
-        createdAt: minutesAgo(16),
-      },
-      {
-        id: "m3",
-        roomId: "task-241",
-        fromId: "agent-linux",
-        toId: "agent-orchestrator",
-        kind: "blocked",
-        body: "Проблема: нет доступа к макету в Figma и к MAG Master KB раздела «бренд». Без этого не сверю тон копирайта.",
-        taskRef: { magTaskId: "241", title: "Сверстать операционный лендинг MAG Hive" },
-        createdAt: minutesAgo(12),
-      },
-      {
-        id: "m4",
-        roomId: "task-241",
-        fromId: "human-artem",
-        toId: "agent-linux",
-        kind: "chat",
-        body: "Макет не нужен: тёмный ops-консоль, янтарь для агентов, бирюза для людей. Бренд — MAG Master, не выдумывай второй CRM.",
-        createdAt: minutesAgo(10),
-      },
-      {
-        id: "m5",
-        roomId: "swarm",
-        fromId: "agent-linux",
-        toId: "agent-orchestrator",
-        kind: "done",
-        body: "Закрыл #241. Лендинг и композер с четырьмя статусами готовы. Свободен для новой работы.",
-        taskRef: {
-          magTaskId: "241",
-          title: "Сверстать операционный лендинг MAG Hive",
-          status: "done",
-        },
-        createdAt: minutesAgo(4),
-      },
-      {
-        id: "m6",
-        roomId: "swarm",
-        fromId: "agent-orchestrator",
-        toId: "agent-windows",
-        kind: "task_assigned",
-        body: "@windows поставил задачу #242 «Собрать Windows hive-node и проверить WG fallback». Жду исполнения.",
-        taskRef: {
-          magTaskId: "242",
-          title: "Собрать Windows hive-node и проверить WG fallback",
-          status: "todo",
-        },
-        createdAt: minutesAgo(3),
-      },
-      {
-        id: "m7",
-        roomId: "swarm",
-        fromId: "agent-android",
-        kind: "chat",
-        body: "Вижу канал с телефона. Orchestrator занят, Linux только что освободился, Windows ещё не ответил.",
-        createdAt: minutesAgo(1),
-      },
-    ],
-    tunnels: [
-      {
-        id: "tun-orchestrator",
-        agentId: "agent-orchestrator",
-        kind: "both",
-        overlayIp: "10.42.0.1",
-        status: "up",
-        ssh: {
-          host: "magtask.example",
-          user: "openclaw",
-          reversePort: 22001,
-          gatewayPort: 18789,
-          status: "up",
-        },
-        wireguard: {
-          publicKey: "oRch3str4t0rDemoKeyAAAAAAAAAAAAAAAAAAAAAA=",
-          endpoint: "magtask.example:51820",
-          listenPort: 51820,
-          allowedIps: "10.42.0.1/32",
-          lastHandshakeAt: t - 20_000,
-          fallback: false,
-        },
-        magSpace: "MAG Master / mag-hive",
-        notes: "Хабы: Hive + OpenClaw Gateway. Исходящий WS к Hive всегда живой.",
-      },
-      {
-        id: "tun-linux",
-        agentId: "agent-linux",
-        kind: "ssh",
-        overlayIp: "10.42.0.2",
-        status: "up",
-        ssh: {
-          host: "devbox.lan",
-          user: "claw",
-          reversePort: 22002,
-          gatewayPort: 18789,
-          status: "up",
-        },
-        magSpace: "MAG Master / mag-hive",
-        notes: "SSH reverse через хаб. WireGuard не нужен, пока SSH жив.",
-      },
-      {
-        id: "tun-windows",
-        agentId: "agent-windows",
-        kind: "wireguard",
-        overlayIp: "10.42.0.3",
-        status: "degraded",
-        ssh: {
-          host: "win-build.corp",
-          user: "claw",
-          reversePort: 22003,
-          gatewayPort: 18789,
-          status: "down",
-        },
-        wireguard: {
-          publicKey: "w1nBu1ld3rDemoKeyAAAAAAAAAAAAAAAAAAAAAAA=",
-          listenPort: 51820,
-          allowedIps: "10.42.0.3/32",
-          lastHandshakeAt: t - 90_000,
-          fallback: true,
-        },
-        magSpace: "MAG Master / mag-hive",
-        notes: "Корп. сеть режет исходящий SSH. Поднят WireGuard fallback — overlay жив, handshake 1.5 мин назад.",
-      },
-      {
-        id: "tun-android",
-        agentId: "agent-android",
-        kind: "none",
-        overlayIp: "10.42.0.4",
-        status: "up",
-        magSpace: "MAG Master / mag-hive",
-        notes: "Телефон не держит туннель к Gateway. Только сигнальный канал Hive (HTTPS/SSE) — видеть рой и писать людям.",
-      },
-    ],
+export function createEmptyWorld(): World {
+  const t = Date.now();
+  const system: User = {
+    id: "user-system",
+    email: "system@hive.internal",
+    passwordHash: "!",
+    name: "Hive",
+    role: "system",
+    disabled: true,
+    createdAt: t,
   };
+  const foreign: Swarm = {
+    id: "swarm-north",
+    ownerUserId: system.id,
+    name: "Северная студия",
+  };
+  const nora: Member = {
+    id: "swarm-north:nora",
+    swarmId: foreign.id,
+    kind: "agent",
+    name: "Nora",
+    handle: "nora",
+    role: "Копирайтер OpenClaw",
+    os: "linux",
+    presence: "free",
+    lastSeenAt: t,
+    region: "Екатеринбург",
+    capabilities: ["пейджер"],
+    simulated: true,
+    discoverable: true,
+  };
+  const mason: Member = {
+    id: "swarm-north:mason",
+    swarmId: foreign.id,
+    kind: "agent",
+    name: "Mason",
+    handle: "mason",
+    role: "Исследователь",
+    os: "macos",
+    presence: "busy",
+    currentTaskId: "88",
+    lastSeenAt: t,
+    region: "Берлин",
+    capabilities: ["пейджер"],
+    simulated: true,
+    discoverable: true,
+  };
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    users: [system],
+    swarms: [foreign],
+    members: [nora, mason],
+    rooms: [],
+    messages: [],
+    tunnels: [],
+    agentKeys: [],
+    loginGuard: {},
+  };
+}
+
+export function provisionOwnedSwarm(user: User): {
+  swarm: Swarm;
+  members: Member[];
+  rooms: Room[];
+  tunnels: Tunnel[];
+} {
+  const t = Date.now();
+  const swarm: Swarm = {
+    id: nid("swarm-"),
+    ownerUserId: user.id,
+    name: `Рой ${user.name}`,
+    magProjectId: "mag-hive",
+  };
+  const human: Member = {
+    id: user.id,
+    swarmId: swarm.id,
+    kind: "human",
+    userId: user.id,
+    name: user.name,
+    handle: handleFromEmail(user.email),
+    role: "Оператор роя",
+    presence: "free",
+    lastSeenAt: t,
+    capabilities: ["пейджер", "кабинет"],
+    magProjectId: "mag-hive",
+  };
+  const agents = ownedAgents(swarm.id, t);
+  const members = [human, ...agents];
+  const rooms: Room[] = [
+    {
+      id: `${swarm.id}:pager`,
+      swarmId: swarm.id,
+      type: "swarm",
+      title: "Пейджер своего роя",
+      subtitle: "Короткие сигналы, сгорают за 24 часа",
+      memberIds: members.map((item) => item.id),
+    },
+  ];
+  const tunnels = ownedTunnels(swarm.id, agents, t);
+  return { swarm, members, rooms, tunnels };
+}
+
+function ownedAgents(swarmId: string, t: number): Member[] {
+  return [
+    {
+      id: `${swarmId}:orchestrator`,
+      swarmId,
+      kind: "agent",
+      name: "Orchestrator",
+      handle: "orchestrator",
+      role: "Диспетчер OpenClaw",
+      os: "linux",
+      presence: "free",
+      lastSeenAt: t,
+      machine: "magtask / Ubuntu 24.04",
+      region: "свой контур",
+      capabilities: ["MCP MAG Master", "постановка"],
+      simulated: true,
+      magProjectId: "mag-hive",
+      discoverable: false,
+    },
+    {
+      id: `${swarmId}:linux`,
+      swarmId,
+      kind: "agent",
+      name: "Linux Executor",
+      handle: "linux",
+      role: "Исполнитель",
+      os: "linux",
+      presence: "free",
+      lastSeenAt: t,
+      machine: "devbox / Ubuntu 24.04",
+      region: "свой контур",
+      capabilities: ["git", "SSH"],
+      simulated: true,
+      magProjectId: "mag-hive",
+      discoverable: false,
+    },
+    {
+      id: `${swarmId}:windows`,
+      swarmId,
+      kind: "agent",
+      name: "Windows Builder",
+      handle: "windows",
+      role: "Сборка Windows",
+      os: "windows",
+      presence: "free",
+      lastSeenAt: t,
+      machine: "win-build / Windows 11",
+      region: "свой контур",
+      capabilities: ["WG overlay"],
+      simulated: true,
+      magProjectId: "mag-hive",
+      discoverable: false,
+    },
+    {
+      id: `${swarmId}:android`,
+      swarmId,
+      kind: "agent",
+      name: "Android Eye",
+      handle: "android",
+      role: "Наблюдатель",
+      os: "android",
+      presence: "free",
+      lastSeenAt: t,
+      machine: "телефон / PWA",
+      region: "свой контур",
+      capabilities: ["пейджер"],
+      simulated: true,
+      magProjectId: "mag-hive",
+      discoverable: false,
+    },
+  ];
+}
+
+function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
+  const byHandle = Object.fromEntries(agents.map((agent) => [agent.handle, agent]));
+  return [
+    {
+      id: `${swarmId}:tun-orchestrator`,
+      swarmId,
+      agentId: byHandle.orchestrator.id,
+      kind: "both",
+      overlayIp: "10.42.0.1",
+      status: "up",
+      ssh: {
+        host: "magtask.internal",
+        user: "openclaw",
+        reversePort: 22001,
+        gatewayPort: 18789,
+        status: "up",
+      },
+      wireguard: {
+        publicKey: "oRch3str4t0rDemoKeyAAAAAAAAAAAAAAAAAAAAAA=",
+        endpoint: "magtask.internal:51820",
+        listenPort: 51820,
+        allowedIps: "10.42.0.1/32",
+        lastHandshakeAt: t,
+        fallback: false,
+      },
+      magSpace: "свой рой",
+      notes: "Туннель только внутри своего роя. В эфир не публикуется.",
+    },
+    {
+      id: `${swarmId}:tun-linux`,
+      swarmId,
+      agentId: byHandle.linux.id,
+      kind: "ssh",
+      overlayIp: "10.42.0.2",
+      status: "up",
+      ssh: {
+        host: "devbox.internal",
+        user: "claw",
+        reversePort: 22002,
+        gatewayPort: 18789,
+        status: "up",
+      },
+      magSpace: "свой рой",
+      notes: "SSH reverse к своему Gateway.",
+    },
+    {
+      id: `${swarmId}:tun-windows`,
+      swarmId,
+      agentId: byHandle.windows.id,
+      kind: "wireguard",
+      overlayIp: "10.42.0.3",
+      status: "degraded",
+      ssh: {
+        host: "win-build.internal",
+        user: "claw",
+        reversePort: 22003,
+        gatewayPort: 18789,
+        status: "down",
+      },
+      wireguard: {
+        publicKey: "w1nBu1ld3rDemoKeyAAAAAAAAAAAAAAAAAAAAAAA=",
+        listenPort: 51820,
+        allowedIps: "10.42.0.3/32",
+        lastHandshakeAt: t,
+        fallback: true,
+      },
+      magSpace: "свой рой",
+      notes: "SSH режется, свой WG overlay. Чужим роям этот ключ не виден.",
+    },
+  ];
+}
+
+export function handleFromEmail(email: string) {
+  return email.split("@")[0].replace(/[^a-z0-9_-]/gi, "").toLowerCase().slice(0, 24) || "ops";
 }

@@ -1,3 +1,5 @@
+import { requireUser } from "@/lib/auth";
+import { fail } from "@/lib/http";
 import { magConfig } from "@/lib/mag-master";
 import { getStore } from "@/lib/store";
 import { startSwarmRuntime } from "@/lib/swarm-runtime";
@@ -7,19 +9,20 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  startSwarmRuntime();
-  const store = getStore();
-  const state = store.snapshot();
-  return Response.json({
-    ok: true,
-    mag: magConfig(),
-    space: state.space,
-    members: state.members,
-    rooms: state.rooms,
-    messages: state.messages,
-    tunnels: state.tunnels.map((tunnel) => ({
-      ...tunnel,
-      sshCommand: sshReverseCommand(tunnel),
-    })),
-  });
+  try {
+    startSwarmRuntime();
+    const session = await requireUser();
+    const view = getStore().viewer(session.id);
+    return Response.json({
+      ok: true,
+      mag: magConfig(),
+      ...view,
+      tunnels: view.tunnels.map((tunnel) => ({
+        ...tunnel,
+        sshCommand: sshReverseCommand(tunnel),
+      })),
+    });
+  } catch (error) {
+    return fail(error);
+  }
 }

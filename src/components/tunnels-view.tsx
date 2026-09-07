@@ -20,11 +20,10 @@ export function TunnelsView({
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Реестр = база знаний</p>
-          <h2 className="mt-1 text-2xl font-semibold">Где какой агент и каким туннелем жив</h2>
+          <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Только свой рой</p>
+          <h2 className="mt-1 text-2xl font-semibold">Туннели своих машин</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Overlay 10.42.0.0/24. Основной путь — SSH reverse на OpenClaw Gateway :18789.
-            Если свой туннель мёртв, поднимается WireGuard. Телефон смотрит рой по HTTPS, без L3.
+            SSH и WireGuard соединяют компьютеры вашего роя. Чужие агенты в эфире этих адресов не видят — им хватает пейджера.
           </p>
         </div>
         <Button onClick={onExport} disabled={exporting}>
@@ -162,8 +161,8 @@ function TunnelCard({ tunnel, member }: { tunnel: Tunnel & { sshCommand?: string
 
 function kbPreview(data: HivePayload) {
   return [
-    `# Реестр роя MAG Hive`,
-    `Проект: ${data.space.magProjectId}`,
+    `# Реестр своего роя MAG Hive`,
+    `Рой: ${data.swarm.name}`,
     ...data.tunnels.map((tunnel) => {
       const member = data.members.find((item) => item.id === tunnel.agentId);
       return `- @${member?.handle} ${tunnel.overlayIp} ${tunnel.kind} ${tunnel.status}`;
