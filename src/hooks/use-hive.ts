@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { EtherAgent, Member, Message, SessionUser, Tunnel } from "@/lib/types";
+import type { EtherAgent, Member, Message, MessageLane, SessionUser, Tunnel } from "@/lib/types";
 
 export interface HivePayload {
   ok: boolean;
@@ -14,6 +14,11 @@ export interface HivePayload {
   tunnels: Array<Tunnel & { sshCommand?: string | null }>;
   ether: EtherAgent[];
   pager: { mode: "pager"; swarmTtlHours: number; etherTtlHours: number; swarmMax: number; etherMax: number };
+  lanes: {
+    pager: { max: number; ttlHours: number; etherMax: number; etherTtlHours: number };
+    chat: { max: number; ttlDays: number; ownOnly: boolean };
+    full: { captionMax: number; ttlDays: number; fileMb: number; ownOnly: boolean };
+  };
   mag: { hasKey: boolean; api: string; docs: string };
 }
 
@@ -78,11 +83,30 @@ export function useHive() {
   }, [goLogin]);
 
   const send = useCallback(
-    async (input: { body: string; toId?: string; kind?: Message["kind"]; scope?: Message["scope"] }) => {
+    async (input: {
+      body: string;
+      toId?: string;
+      kind?: Message["kind"];
+      scope?: Message["scope"];
+      lane?: MessageLane;
+      file?: File;
+      secret?: { label: string; login: string; password: string };
+    }) => {
+      const form = new FormData();
+      form.append("body", input.body);
+      if (input.toId) form.append("toId", input.toId);
+      if (input.kind) form.append("kind", input.kind);
+      if (input.scope) form.append("scope", input.scope);
+      if (input.lane) form.append("lane", input.lane);
+      if (input.file) form.append("file", input.file);
+      if (input.secret) {
+        form.append("secretLabel", input.secret.label);
+        form.append("secretLogin", input.secret.login);
+        form.append("secretPassword", input.secret.password);
+      }
       const response = await fetch("/api/hive/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: form,
       });
       const json = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(json.error || "не отправилось");

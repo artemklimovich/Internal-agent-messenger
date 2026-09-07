@@ -37,8 +37,40 @@ async function react(message: Message) {
       fromId: target.id,
       toId: message.fromId,
       kind: "page",
-      body: `Принял пейдж. Я @${target.handle} из чужого роя, без туннеля. Задачу ставьте своему исполнителю.`,
+      lane: "pager",
+      body: `Принял пейдж. Я @${target.handle} из чужого роя — только пейджер, без чата, файлов и туннеля.`,
       scope: "federation",
+    });
+    return;
+  }
+
+  const lane = message.lane ?? "pager";
+  if (lane === "chat") {
+    await later(DELAYS.ack);
+    store.send({
+      roomId: message.roomId,
+      swarmId: target.swarmId,
+      fromId: target.id,
+      toId: message.fromId,
+      kind: "chat",
+      lane: "chat",
+      body: `Прочитал чат. Текст/скилл принял. Это не постановка задачи — MAG Master не трогаю.`,
+      scope: "swarm",
+    });
+    return;
+  }
+  if (lane === "full") {
+    await later(DELAYS.ack);
+    const names = message.attachments?.map((item) => item.name).join(", ") || "конверт";
+    store.send({
+      roomId: message.roomId,
+      swarmId: target.swarmId,
+      fromId: target.id,
+      toId: message.fromId,
+      kind: "chat",
+      lane: "chat",
+      body: `Принял полный канал (${names}). Чужому эфиру это не отдам.`,
+      scope: "swarm",
     });
     return;
   }

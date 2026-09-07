@@ -58,6 +58,7 @@ export function createEmptyWorld(): World {
     messages: [],
     tunnels: [],
     agentKeys: [],
+    secrets: [],
     loginGuard: {},
   };
 }
@@ -85,7 +86,7 @@ export function provisionOwnedSwarm(user: User): {
     role: "Оператор роя",
     presence: "free",
     lastSeenAt: t,
-    capabilities: ["пейджер", "кабинет"],
+    capabilities: ["пейджер", "чат", "полный канал", "кабинет"],
     magProjectId: "mag-hive",
   };
   const agents = ownedAgents(swarm.id, t);

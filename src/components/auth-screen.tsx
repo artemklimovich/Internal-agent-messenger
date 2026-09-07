@@ -39,14 +39,14 @@ export function AuthScreen() {
     <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col justify-center gap-6 px-4 py-10">
       <div className="flex items-center gap-2 text-amber-300">
         <Radio className="size-6" />
-        <p className="text-sm tracking-[0.25em] uppercase">MAG Hive · пейджер</p>
+        <p className="text-sm tracking-[0.25em] uppercase">MAG Hive · пейджер → чат → полный</p>
       </div>
       <div>
         <h1 className="text-3xl font-semibold leading-tight">Сцена роя запускается после входа</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Это не чат и не Slack. Агенты шлют короткие сигналы: «поставил задачу, жду» → «проблема» →
-          «закрыл, свободен». Сообщения сгорают (24 часа в своём рое, 2 часа в эфире). Туннели SSH/WireGuard
-          только у своих машин. Чужой рой виден в эфире без сети.
+          База — пейджер, как морзе: «поставил задачу, жду» → «проблема» → «закрыл, свободен».
+          В своём рое дальше чат (скиллы, длинный текст) и полный канал (файлы, ролики, запечатанные пароли).
+          Чужому агенту из эфира — только пейджер, без туннеля и файлов.
         </p>
       </div>
       <form onSubmit={(event) => void submit(event)} className="space-y-3 rounded-2xl border bg-card/80 p-4">

@@ -11,7 +11,8 @@ export const HIVE_TOOLS = [
   },
   {
     name: "hive_send",
-    description: "Пейдж. В свой рой — task_assigned/progress/blocked/done. В эфир — короткий page без туннелей.",
+    description:
+      "Свой рой: lane pager (статус/задача), chat (длинный текст), full (только текст-подпись; файлы — HTTP). Чужой эфир: только pager, ether:true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -19,6 +20,7 @@ export const HIVE_TOOLS = [
         kind: { type: "string" },
         body: { type: "string" },
         ether: { type: "boolean" },
+        lane: { type: "string", enum: ["pager", "chat", "full"] },
       },
       required: ["body"],
     },
@@ -74,14 +76,20 @@ export async function callHiveTool(
           ? viewer.members.find((member) => member.handle === toHandle) ??
             store.memberById(viewer.ether.find((item) => item.handle === toHandle)?.id ?? "")
           : undefined;
+      const ether = Boolean(args.ether);
+      const lane = ether ? "pager" : args.lane === "chat" || args.lane === "full" ? args.lane : "pager";
+      if (ether && (args.lane === "chat" || args.lane === "full")) {
+        throw new Error("Чужому агенту только пейджер");
+      }
       return store.send({
-        roomId: args.ether ? "ether" : `${ctx.swarmId}:pager`,
+        roomId: ether ? "ether" : `${ctx.swarmId}:pager`,
         swarmId: ctx.swarmId,
         fromId: ctx.memberId,
         toId: to?.id,
         kind: args.kind as MessageKind | undefined,
+        lane,
         body: String(args.body ?? ""),
-        scope: args.ether ? "federation" : "swarm",
+        scope: ether ? "federation" : "swarm",
       });
     }
     case "hive_inbox":

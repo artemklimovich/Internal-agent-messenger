@@ -10,11 +10,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useHive } from "@/hooks/use-hive";
 import { cn } from "@/lib/utils";
-import type { EtherAgent, Member, MessageKind, Presence } from "@/lib/types";
+import type { EtherAgent, Member, MessageKind, MessageLane, Presence } from "@/lib/types";
 import {
   Bot,
+  Lock,
   MessageSquare,
   Network,
+  Paperclip,
   Radio,
   Send,
   Shield,
@@ -31,10 +33,16 @@ const PRESENCE: Record<Presence, string> = {
   offline: "офлайн",
 };
 
-const SCENE_STEPS = [
+const PAGER_STEPS = [
   "Orchestrator ставит задачу Linux и ждёт",
   "Linux берёт в работу",
   "Linux закрывает и становится свободен",
+];
+
+const FULL_STEPS = [
+  "Чат: длинный текст — обновить скилл",
+  "Полный канал: файл скилла и обложка ролика",
+  "Конверт с логином — чужому эфиру не уйдёт",
 ];
 
 export function HiveApp() {
@@ -42,12 +50,19 @@ export function HiveApp() {
   const search = useSearchParams();
   const router = useRouter();
   const [view, setView] = useState<View>("pager");
+  const [lane, setLane] = useState<MessageLane>("pager");
+  const [filter, setFilter] = useState<"all" | MessageLane>("all");
   const [draft, setDraft] = useState("");
   const [kind, setKind] = useState<MessageKind>("task_assigned");
   const [toId, setToId] = useState<string | undefined>();
+  const [file, setFile] = useState<File | null>(null);
+  const [secretLabel, setSecretLabel] = useState("доступ");
+  const [secretLogin, setSecretLogin] = useState("");
+  const [secretPassword, setSecretPassword] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sceneOpen, setSceneOpen] = useState(false);
+  const [sceneKind, setSceneKind] = useState<"pager" | "full">("pager");
   const [sceneStep, setSceneStep] = useState(0);
   const [issuedKey, setIssuedKey] = useState<{ handle: string; key: string } | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
@@ -55,18 +70,30 @@ export function HiveApp() {
   const [admin, setAdmin] = useState<{ users: Array<{ id: string; email: string; name: string; disabled: boolean; swarm?: string }> } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sceneOnce = useRef(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const autoScene = search.get("scene") === "1";
   const showScene = autoScene || sceneOpen;
+  const steps = sceneKind === "full" ? FULL_STEPS : PAGER_STEPS;
 
-  const pagerMessages = useMemo(
-    () => (data?.messages ?? []).filter((message) => message.scope === "swarm"),
-    [data],
-  );
+  const pagerMessages = useMemo(() => {
+    const swarm = (data?.messages ?? []).filter((message) => message.scope === "swarm");
+    if (filter === "all") return swarm;
+    return swarm.filter((message) => (message.lane ?? "pager") === filter);
+  }, [data, filter]);
   const etherMessages = useMemo(
     () => (data?.messages ?? []).filter((message) => message.scope === "federation"),
     [data],
   );
+
+  const maxChars =
+    view === "ether"
+      ? (data?.pager.etherMax ?? 140)
+      : lane === "chat"
+        ? (data?.lanes.chat.max ?? 8000)
+        : lane === "full"
+          ? (data?.lanes.full.captionMax ?? 4000)
+          : (data?.pager.swarmMax ?? 280);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -87,29 +114,45 @@ export function HiveApp() {
     };
   }, [data, autoScene, router, refresh]);
 
-  async function playScene() {
+  async function runScene(which: "pager" | "full") {
     setView("pager");
+    setSceneKind(which);
     setSceneOpen(true);
     setSceneStep(0);
-    await fetch("/api/hive/demo", { method: "POST" });
+    await fetch("/api/hive/demo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene: which === "full" ? "full" : "pager" }),
+    });
     setTimeout(() => setSceneStep(1), 900);
     setTimeout(() => setSceneStep(2), 2800);
-    setTimeout(() => setSceneOpen(false), 7000);
+    setTimeout(() => setSceneOpen(false), 8000);
     await refresh();
   }
 
   async function onSend(scope: "swarm" | "federation") {
-    if (!draft.trim()) return;
+    const secret =
+      scope === "swarm" && lane === "full" && secretLogin && secretPassword
+        ? { label: secretLabel, login: secretLogin, password: secretPassword }
+        : undefined;
+    if (!draft.trim() && !file && !secret) return;
     setSending(true);
     setSendError(null);
     try {
       await send({
         body: draft.trim(),
         toId: scope === "federation" ? etherTo?.id : toId,
-        kind: scope === "federation" ? "page" : kind,
+        kind: scope === "federation" ? "page" : lane === "chat" ? "chat" : lane === "full" ? (secret ? "secret" : "artifact") : kind,
         scope,
+        lane: scope === "federation" ? "pager" : lane,
+        file: scope === "swarm" && lane === "full" ? file ?? undefined : undefined,
+        secret,
       });
       setDraft("");
+      setFile(null);
+      setSecretLogin("");
+      setSecretPassword("");
+      if (fileRef.current) fileRef.current.value = "";
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "не отправилось");
     } finally {
@@ -165,23 +208,28 @@ export function HiveApp() {
   if (!data) return null;
 
   const linux = data.members.find((member) => member.handle === "linux");
+  const meHandle = data.members.find((member) => member.id === data.me.id)?.handle;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {showScene ? (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-amber-300/40 bg-card p-5 shadow-xl">
-            <p className="text-xs tracking-[0.2em] text-amber-200 uppercase">Сцена пейджера</p>
-            <h2 className="mt-2 text-2xl font-semibold">Агент ставит задачу агенту</h2>
+            <p className="text-xs tracking-[0.2em] text-amber-200 uppercase">
+              {sceneKind === "full" ? "Сцена полной связи" : "Сцена пейджера"}
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold">
+              {sceneKind === "full" ? "Свой рой: чат, файл, конверт" : "Агент ставит задачу агенту"}
+            </h2>
             <ol className="mt-4 space-y-2 text-sm">
-              {SCENE_STEPS.map((step, index) => (
+              {steps.map((step, index) => (
                 <li key={step} className={cn("rounded-lg px-3 py-2", index <= sceneStep ? "bg-amber-400/15" : "text-muted-foreground")}>
                   {index + 1}. {step}
                 </li>
               ))}
             </ol>
             <p className="mt-4 text-xs text-muted-foreground">
-              Это не чат: короткие сигналы, потом сгорают. Туннелей чужим нет.
+              Чужому агенту из этих трёх слоёв доступен только пейджер.
             </p>
           </div>
         </div>
@@ -193,10 +241,10 @@ export function HiveApp() {
           <p className="text-sm font-semibold">MAG Hive</p>
           <p className="text-xs text-muted-foreground">{data.swarm.name} · вы {data.me.name}</p>
         </div>
-        <Badge variant="outline">пейджер 24ч</Badge>
+        <Badge variant="outline">пейджер → чат → полный</Badge>
         <nav className="ml-auto hidden flex-wrap gap-1 md:flex">
           <NavBtn active={view === "pager"} onClick={() => setView("pager")} icon={MessageSquare}>
-            Пейджер
+            Рой
           </NavBtn>
           <NavBtn active={view === "ether"} onClick={() => setView("ether")} icon={Radio}>
             Эфир
@@ -220,8 +268,11 @@ export function HiveApp() {
       {view === "pager" ? (
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <aside className="w-full shrink-0 border-b p-3 md:w-72 md:border-r md:border-b-0">
-            <Button className="mb-3 h-12 w-full text-base" onClick={() => void playScene()}>
+            <Button className="mb-2 h-12 w-full text-base" onClick={() => void runScene("pager")}>
               Смотреть сцену роя
+            </Button>
+            <Button className="mb-3 h-10 w-full" variant="outline" onClick={() => void runScene("full")}>
+              Сцена чата и файлов
             </Button>
             <p className="text-[11px] tracking-wider text-muted-foreground uppercase">Свои агенты</p>
             {data.members
@@ -244,16 +295,23 @@ export function HiveApp() {
           </aside>
           <section className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="border-b px-4 py-2 text-sm">
-              <p className="font-medium">Пейджер своего роя</p>
+              <p className="font-medium">Свой рой: три слоя связи</p>
               <p className="text-xs text-muted-foreground">
-                Пишете как человек @{data.members.find((member) => member.id === data.me.id)?.handle}. Агентов за них не притворяемся.
+                Пишете как человек @{meHandle}. Пейджер — статус и задачи. Чат — длинный текст. Полный — файлы, ролики, конверты с паролем.
               </p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(["all", "pager", "chat", "full"] as const).map((item) => (
+                  <Button key={item} size="sm" variant={filter === item ? "default" : "outline"} onClick={() => setFilter(item)}>
+                    {item === "all" ? "все" : item === "pager" ? "пейджер" : item === "chat" ? "чат" : "полный"}
+                  </Button>
+                ))}
+              </div>
             </div>
             <ScrollArea className="min-h-0 flex-1 overflow-hidden">
               <div className="space-y-2 p-3 md:p-4">
                 {pagerMessages.length === 0 ? (
                   <p className="rounded-xl border border-dashed p-6 text-center text-sm">
-                    Пока тихо. Нажмите жёлтую кнопку «Смотреть сцену роя» — Orchestrator сам поставит задачу Linux.
+                    Пока тихо. «Смотреть сцену роя» — пейджер задач. «Сцена чата и файлов» — скилл, обложка и конверт.
                   </p>
                 ) : (
                   pagerMessages.map((message) => (
@@ -270,17 +328,68 @@ export function HiveApp() {
             </ScrollArea>
             <div className="border-t p-3">
               <div className="mb-2 flex flex-wrap gap-1">
-                <Button size="sm" variant={kind === "task_assigned" ? "default" : "outline"} onClick={() => { setKind("task_assigned"); setToId(linux?.id); setDraft(`@linux поставил задачу #244 «Короткий отчёт по рою». Жду исполнения.`); }}>
-                  Поставил задачу
+                <Button size="sm" variant={lane === "pager" ? "default" : "outline"} onClick={() => setLane("pager")}>
+                  Пейджер
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => { setKind("page"); setDraft("Принято, смотрю."); }}>Короткий пейдж</Button>
+                <Button size="sm" variant={lane === "chat" ? "default" : "outline"} onClick={() => setLane("chat")}>
+                  Чат
+                </Button>
+                <Button size="sm" variant={lane === "full" ? "default" : "outline"} onClick={() => setLane("full")}>
+                  Полный
+                </Button>
               </div>
+              {lane === "pager" ? (
+                <div className="mb-2 flex flex-wrap gap-1">
+                  <Button size="sm" variant={kind === "task_assigned" ? "default" : "outline"} onClick={() => { setKind("task_assigned"); setToId(linux?.id); setDraft(`@linux поставил задачу #244 «Короткий отчёт по рою». Жду исполнения.`); }}>
+                    Поставил задачу
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => { setKind("page"); setDraft("Принято, смотрю."); }}>Короткий пейдж</Button>
+                </div>
+              ) : null}
+              {lane === "chat" ? (
+                <p className="mb-2 text-xs text-muted-foreground">До 8000 знаков, 7 дней. Скиллы текстом, пояснения, выдержки из KB. Не статус задачи.</p>
+              ) : null}
+              {lane === "full" ? (
+                <div className="mb-2 space-y-2 rounded-lg border border-violet-400/30 p-2">
+                  <p className="text-xs text-muted-foreground">Файлы, картинки, документы, ролики до 32 МБ, 30 дней. Пароли — запечатанный конверт, в MAG Master не уходят.</p>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    className="block w-full text-xs"
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  />
+                  {file ? <p className="text-xs">{file.name}</p> : null}
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <Input placeholder="ярлык конверта" value={secretLabel} onChange={(event) => setSecretLabel(event.target.value)} />
+                    <Input placeholder="логин (необязательно)" value={secretLogin} onChange={(event) => setSecretLogin(event.target.value)} />
+                    <Input type="password" placeholder="пароль конверта" value={secretPassword} onChange={(event) => setSecretPassword(event.target.value)} />
+                  </div>
+                </div>
+              ) : null}
               <div className="flex gap-2">
-                <Textarea value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={data.pager.swarmMax} placeholder="Коротко, как пейджер" className="min-h-16" />
+                <Textarea
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  maxLength={maxChars}
+                  placeholder={
+                    lane === "pager"
+                      ? "Коротко, как пейджер"
+                      : lane === "chat"
+                        ? "Длинный текст своему агенту"
+                        : "Подпись к файлу или конверту"
+                  }
+                  className="min-h-16"
+                />
+                {lane === "full" ? (
+                  <Button type="button" variant="outline" className="self-end" onClick={() => fileRef.current?.click()}>
+                    <Paperclip className="size-4" />
+                  </Button>
+                ) : null}
                 <Button className="self-end" disabled={sending} onClick={() => void onSend("swarm")}>
                   <Send className="size-4" />
                 </Button>
               </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">{draft.length}/{maxChars}</p>
               {sendError ? <p className="mt-2 text-xs text-rose-300">{sendError}</p> : null}
             </div>
           </section>
@@ -291,7 +400,10 @@ export function HiveApp() {
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <aside className="w-full border-b p-3 md:w-80 md:border-r md:border-b-0">
             <p className="text-sm font-medium">Чужие рои</p>
-            <p className="mb-2 text-xs text-muted-foreground">Видно кто где и свободен ли. Туннелей и overlay нет.</p>
+            <p className="mb-2 flex items-start gap-2 text-xs text-muted-foreground">
+              <Lock className="mt-0.5 size-3 shrink-0" />
+              Только пейджер: 140 знаков, 2 часа. Чат, файлы, пароли и туннели закрыты.
+            </p>
             {data.ether.map((agent) => (
               <button key={agent.id} type="button" onClick={() => setEtherTo(agent)} className={cn("mb-1 w-full rounded-lg border px-3 py-2 text-left text-sm", etherTo?.id === agent.id && "border-amber-300")}>
                 @{agent.handle} · {agent.region}
@@ -315,7 +427,10 @@ export function HiveApp() {
                 ))}
               </div>
             </ScrollArea>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
+              Чат и полный канал здесь недоступны — чужой агент не член вашего роя.
+            </div>
+            <div className="mt-2 flex gap-2">
               <Input
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -394,7 +509,7 @@ export function HiveApp() {
       ) : null}
 
       <nav className="flex border-t md:hidden">
-        <MobileTab active={view === "pager"} onClick={() => setView("pager")} icon={MessageSquare} label="Пейджер" />
+        <MobileTab active={view === "pager"} onClick={() => setView("pager")} icon={MessageSquare} label="Рой" />
         <MobileTab active={view === "ether"} onClick={() => setView("ether")} icon={Radio} label="Эфир" />
         <MobileTab active={view === "tunnels"} onClick={() => setView("tunnels")} icon={Network} label="Туннели" />
         <MobileTab active={view === "cabinet"} onClick={() => { setView("cabinet"); if (data.me.role === "admin") void loadAdmin(); }} icon={Shield} label="Кабинет" />
@@ -420,4 +535,3 @@ function MobileTab({ active, onClick, icon: Icon, label }: { active: boolean; on
     </button>
   );
 }
-

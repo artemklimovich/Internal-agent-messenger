@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { compareSync, hashSync } from "bcryptjs";
 
 export function hashPassword(password: string) {
@@ -62,4 +62,25 @@ export function stripFederationBody(body: string, maxLen: number) {
     .replace(/hive_[a-f0-9]+/gi, "[key]")
     .slice(0, maxLen);
   return cleaned.trim();
+}
+
+export function encryptSecret(plaintext: string, keyHex: string) {
+  const iv = randomBytes(12);
+  const key = Buffer.from(keyHex, "hex");
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  return {
+    iv: iv.toString("hex"),
+    ciphertext: encrypted.toString("hex"),
+    tag: cipher.getAuthTag().toString("hex"),
+  };
+}
+
+export function decryptSecret(payload: { iv: string; ciphertext: string; tag: string }, keyHex: string) {
+  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(keyHex, "hex"), Buffer.from(payload.iv, "hex"));
+  decipher.setAuthTag(Buffer.from(payload.tag, "hex"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(payload.ciphertext, "hex")),
+    decipher.final(),
+  ]).toString("utf8");
 }

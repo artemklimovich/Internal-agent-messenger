@@ -8,7 +8,12 @@ export type MessageKind =
   | "blocked"
   | "done"
   | "free"
+  | "chat"
+  | "artifact"
+  | "secret"
   | "system";
+export type MessageLane = "pager" | "chat" | "full";
+export type AttachmentKind = "image" | "video" | "document" | "skill" | "kb" | "secret";
 export type RoomType = "swarm" | "ether";
 export type TunnelKind = "ssh" | "wireguard" | "both" | "none";
 export type LinkStatus = "up" | "degraded" | "down";
@@ -18,9 +23,15 @@ export type MessageScope = "swarm" | "federation";
 export const SCHEMA_VERSION = 2;
 export const SWARM_PAGE_TTL_MS = 24 * 60 * 60 * 1000;
 export const FED_PAGE_TTL_MS = 2 * 60 * 60 * 1000;
+export const SWARM_CHAT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const SWARM_FULL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SWARM_PAGE_MAX = 280;
 export const FED_PAGE_MAX = 140;
+export const SWARM_CHAT_MAX = 8000;
+export const SWARM_FULL_CAPTION_MAX = 4000;
 export const SWARM_KEEP = 80;
+export const SWARM_CHAT_KEEP = 400;
+export const MAX_FILE_BYTES = 32 * 1024 * 1024;
 
 export interface User {
   id: string;
@@ -94,6 +105,25 @@ export interface Room {
   memberIds: string[];
 }
 
+export interface Attachment {
+  id: string;
+  kind: AttachmentKind;
+  name: string;
+  mime: string;
+  size: number;
+  kbPath?: string;
+}
+
+export interface SealedSecret {
+  id: string;
+  swarmId: string;
+  label: string;
+  ciphertext: string;
+  iv: string;
+  tag: string;
+  opened: boolean;
+}
+
 export interface TaskRef {
   magTaskId: string;
   title: string;
@@ -110,8 +140,11 @@ export interface Message {
   toSwarmId?: string;
   scope: MessageScope;
   kind: MessageKind;
+  lane: MessageLane;
   body: string;
   taskRef?: TaskRef;
+  attachments?: Attachment[];
+  secretId?: string;
   createdAt: number;
   expiresAt: number;
 }
@@ -139,6 +172,7 @@ export interface World {
   messages: Message[];
   tunnels: Tunnel[];
   agentKeys: AgentKey[];
+  secrets: SealedSecret[];
   loginGuard: Record<string, { fails: number; lockedUntil?: number }>;
 }
 
@@ -148,9 +182,12 @@ export interface SendMessageInput {
   fromId: string;
   toId?: string;
   kind?: MessageKind;
+  lane?: MessageLane;
   body: string;
   taskRef?: TaskRef;
   scope?: MessageScope;
+  attachments?: Attachment[];
+  secret?: { label: string; login: string; password: string };
 }
 
 export interface RegisterAgentInput {

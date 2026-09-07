@@ -27,6 +27,13 @@ export function magConfig() {
 }
 
 export async function syncMessageToMag(message: Message): Promise<MagSyncResult> {
+  if ((message.lane ?? "pager") !== "pager" || message.kind === "secret" || message.secretId) {
+    return {
+      attempted: false,
+      ok: false,
+      detail: "В MAG Master комментарии только с пейджера задач. Чат, файлы и секреты остаются в Hive.",
+    };
+  }
   if (!MAG_KEY) {
     return {
       attempted: false,

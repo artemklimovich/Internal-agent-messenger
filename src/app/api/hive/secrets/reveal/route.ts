@@ -2,7 +2,6 @@ import { requireUser } from "@/lib/auth";
 import { assertSameOrigin } from "@/lib/crypto-security";
 import { fail } from "@/lib/http";
 import { getStore } from "@/lib/store";
-import { startSwarmRuntime } from "@/lib/swarm-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,12 +9,11 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    startSwarmRuntime();
     const session = await requireUser();
-    const payload = (await request.json().catch(() => ({}))) as { scene?: string };
-    const store = getStore();
-    const demo = payload.scene === "full" ? store.playFullScene(session.id) : store.playScene(session.id);
-    return Response.json({ ok: true, demo });
+    const body = (await request.json()) as { secretId?: string };
+    if (!body.secretId) throw new Error("secretId required");
+    const secret = getStore().revealSecret(session.id, body.secretId);
+    return Response.json({ ok: true, secret });
   } catch (error) {
     return fail(error);
   }

@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+  encryptSecret,
+  decryptSecret,
   hashAgentKey,
   hashPassword,
   newAgentKey,
@@ -11,13 +13,17 @@ import {
   verifyPassword,
 } from "./crypto-security";
 import { nid } from "./id";
+import { readAttachment, saveAttachment, swarmCryptoKey } from "./blobs";
 import { createEmptyWorld, handleFromEmail, provisionOwnedSwarm } from "./seed";
 import type {
   AgentKey,
+  Attachment,
   EtherAgent,
   HiveEvent,
   Member,
   Message,
+  MessageLane,
+  SealedSecret,
   SendMessageInput,
   SessionUser,
   Tunnel,
@@ -28,6 +34,11 @@ import {
   FED_PAGE_MAX,
   FED_PAGE_TTL_MS,
   SCHEMA_VERSION,
+  SWARM_CHAT_KEEP,
+  SWARM_CHAT_MAX,
+  SWARM_CHAT_TTL_MS,
+  SWARM_FULL_CAPTION_MAX,
+  SWARM_FULL_TTL_MS,
   SWARM_KEEP,
   SWARM_PAGE_MAX,
   SWARM_PAGE_TTL_MS,
@@ -55,6 +66,11 @@ class HiveStore extends EventEmitter {
       if (parsed.schemaVersion !== SCHEMA_VERSION || !parsed.users) {
         return createEmptyWorld();
       }
+      parsed.secrets ??= [];
+      parsed.messages = parsed.messages.map((message) => ({
+        ...message,
+        lane: message.lane ?? "pager",
+      }));
       return parsed;
     } catch {
       return createEmptyWorld();
@@ -185,6 +201,11 @@ class HiveStore extends EventEmitter {
       messages,
       tunnels,
       ether: this.ether(swarm.id),
+      lanes: {
+        pager: { max: SWARM_PAGE_MAX, ttlHours: 24, etherMax: FED_PAGE_MAX, etherTtlHours: 2 },
+        chat: { max: SWARM_CHAT_MAX, ttlDays: 7, ownOnly: true },
+        full: { captionMax: SWARM_FULL_CAPTION_MAX, ttlDays: 30, fileMb: 32, ownOnly: true },
+      },
       pager: {
         mode: "pager" as const,
         swarmTtlHours: 24,
@@ -229,24 +250,61 @@ class HiveStore extends EventEmitter {
   send(input: SendMessageInput): Message {
     const from = this.memberById(input.fromId);
     if (!from) throw new Error("unknown sender");
+    const requestedLane: MessageLane = input.lane ?? "pager";
     const scope = input.scope ?? "swarm";
+    const lane: MessageLane = scope === "federation" ? "pager" : requestedLane;
     const to = input.toId ? this.memberById(input.toId) : undefined;
     if (scope === "federation") {
+      if (requestedLane !== "pager" || input.attachments?.length || input.secret) {
+        throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
+      }
       if (!to || to.swarmId === from.swarmId) {
         throw new Error("Эфир только к чужому агенту");
       }
       if (!to.discoverable) throw new Error("Агент скрыт из эфира");
     } else if (to && to.swarmId !== from.swarmId) {
-      throw new Error("В свой пейджер нельзя писать чужому рою");
+      throw new Error("В свой канал нельзя писать чужому рою");
     }
 
-    const max = scope === "federation" ? FED_PAGE_MAX : SWARM_PAGE_MAX;
-    const raw = input.body.trim().slice(0, max);
+    const max =
+      scope === "federation"
+        ? FED_PAGE_MAX
+        : lane === "chat"
+          ? SWARM_CHAT_MAX
+          : lane === "full"
+            ? SWARM_FULL_CAPTION_MAX
+            : SWARM_PAGE_MAX;
+    const raw = (input.body ?? "").trim().slice(0, max);
     const body = scope === "federation" ? stripFederationBody(raw, max) : raw;
-    if (!body) throw new Error("Пустой пейдж");
+    const attachments = lane === "full" ? [...(input.attachments ?? [])] : [];
+    if (!body && !attachments.length && !input.secret) throw new Error("Пустое сообщение");
 
-    const kind = input.kind ?? inferKind(body, scope);
-    const ttl = scope === "federation" ? FED_PAGE_TTL_MS : SWARM_PAGE_TTL_MS;
+    let secretId: string | undefined;
+    if (input.secret) {
+      if (scope !== "swarm" || lane !== "full") {
+        throw new Error("Секреты только в полной связи своего роя");
+      }
+      secretId = this.sealSecret(from.swarmId, input.secret);
+      attachments.push({
+        id: secretId,
+        kind: "secret",
+        name: input.secret.label || "конверт",
+        mime: "application/x-hive-secret",
+        size: 0,
+      });
+    }
+
+    const kind =
+      input.kind ??
+      (secretId ? "secret" : attachments.length ? "artifact" : inferKind(body, scope, lane));
+    const ttl =
+      scope === "federation"
+        ? FED_PAGE_TTL_MS
+        : lane === "chat"
+          ? SWARM_CHAT_TTL_MS
+          : lane === "full"
+            ? SWARM_FULL_TTL_MS
+            : SWARM_PAGE_TTL_MS;
     const message: Message = {
       id: nid("msg-"),
       roomId: input.roomId,
@@ -257,34 +315,53 @@ class HiveStore extends EventEmitter {
       toSwarmId: to?.swarmId ?? from.swarmId,
       scope,
       kind,
-      body,
-      taskRef: scope === "swarm" ? input.taskRef ?? parseTaskRef(body) : undefined,
+      lane,
+      body: body || (secretId ? "Запечатанный конверт" : attachments[0]?.name ?? ""),
+      taskRef: scope === "swarm" && lane === "pager" ? input.taskRef ?? parseTaskRef(body) : input.taskRef,
+      attachments: attachments.length ? attachments : undefined,
+      secretId,
       createdAt: Date.now(),
       expiresAt: Date.now() + ttl,
     };
     this.world.messages.push(message);
-    this.trimPager(from.swarmId);
+    this.trimLane(from.swarmId, lane);
     this.applyPresence(message, from);
     from.lastSeenAt = Date.now();
     this.emit("event", {
       type: "message",
       at: message.createdAt,
-      message,
+      message: { ...message, secretId: message.secretId },
       swarmId: from.swarmId,
     } satisfies HiveEvent);
     this.persist();
     return message;
   }
 
-  sendAsUser(userId: string, input: { body: string; toId?: string; kind?: Message["kind"]; scope?: Message["scope"] }) {
-    if (!rateLimit(`send:${userId}`, input.scope === "federation" ? 8 : 30, 60_000)) {
-      throw new Error("Слишком часто. Пейджер не чат.");
-    }
+  sendAsUser(
+    userId: string,
+    input: {
+      body: string;
+      toId?: string;
+      kind?: Message["kind"];
+      scope?: Message["scope"];
+      lane?: MessageLane;
+      attachments?: Attachment[];
+      secret?: { label: string; login: string; password: string };
+    },
+  ) {
     const swarm = this.swarmByOwner(userId);
     const from = this.world.members.find((member) => member.userId === userId);
     if (!swarm || !from) throw new Error("unauthorized");
     const to = input.toId ? this.memberById(input.toId) : undefined;
     const scope = input.scope ?? (to && to.swarmId !== swarm.id ? "federation" : "swarm");
+    const lane = scope === "federation" ? "pager" : (input.lane ?? "pager");
+    const limit = scope === "federation" ? 8 : lane === "full" ? 12 : 40;
+    if (!rateLimit(`send:${userId}:${lane}`, limit, 60_000)) {
+      throw new Error("Слишком часто.");
+    }
+    if (scope === "federation" && (input.lane === "chat" || input.lane === "full" || input.attachments?.length || input.secret)) {
+      throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
+    }
     const roomId = scope === "federation" ? "ether" : `${swarm.id}:pager`;
     return this.send({
       roomId,
@@ -292,9 +369,102 @@ class HiveStore extends EventEmitter {
       fromId: from.id,
       toId: input.toId,
       kind: input.kind,
+      lane,
       body: input.body,
       scope,
+      attachments: input.attachments,
+      secret: input.secret,
     });
+  }
+
+  attachFile(userId: string, file: { name: string; type: string; bytes: Buffer }) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    return saveAttachment(swarm.id, file);
+  }
+
+  readFile(userId: string, fileId: string) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    const attachment = this.world.messages
+      .filter((message) => message.swarmId === swarm.id)
+      .flatMap((message) => message.attachments ?? [])
+      .find((item) => item.id === fileId && item.kind !== "secret");
+    if (!attachment) throw new Error("forbidden");
+    return {
+      bytes: readAttachment(swarm.id, fileId),
+      name: attachment.name,
+      mime: attachment.mime,
+      swarmId: swarm.id,
+    };
+  }
+
+  revealSecret(userId: string, secretId: string) {
+    const swarm = this.swarmByOwner(userId);
+    const secret = this.world.secrets.find((item) => item.id === secretId);
+    if (!swarm || !secret || secret.swarmId !== swarm.id) throw new Error("forbidden");
+    const payload = decryptSecret(secret, swarmCryptoKey(swarm.id));
+    secret.opened = true;
+    this.persist();
+    return { label: secret.label, payload: JSON.parse(payload) as { login: string; password: string } };
+  }
+
+  playFullScene(userId: string) {
+    const swarm = this.swarmByOwner(userId);
+    const linux = this.world.members.find(
+      (member) => member.swarmId === swarm?.id && member.handle === "linux",
+    );
+    const from = this.world.members.find((member) => member.userId === userId);
+    if (!swarm || !linux || !from) throw new Error("unauthorized");
+    const skill = saveAttachment(swarm.id, {
+      name: "SKILL-smm.md",
+      type: "text/markdown",
+      bytes: Buffer.from(
+        "# SMM publish\n\n1. Ролик и обложка — только из полного канала своего роя.\n2. Публикация через MAG Master Social Content, не напрямую «в эфир».\n3. Чужому агенту — пейджер, без файлов и паролей.\n",
+        "utf8",
+      ),
+    });
+    const cover = saveAttachment(swarm.id, {
+      name: "reel-cover.png",
+      type: "image/png",
+      bytes: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAABGUlEQVR4nO3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgbwM+AAH9nQ9FAAAAAElFTkSuQmCC",
+        "base64",
+      ),
+    });
+    this.send({
+      roomId: `${swarm.id}:pager`,
+      swarmId: swarm.id,
+      fromId: from.id,
+      toId: linux.id,
+      kind: "chat",
+      lane: "chat",
+      body: "@linux обнови скилл публикации: ролик сначала в MAG Master Studio, потом в соцсеть. В эфир файл и пароль не тащи — чужому только пейджер.",
+      scope: "swarm",
+    });
+    this.send({
+      roomId: `${swarm.id}:pager`,
+      swarmId: swarm.id,
+      fromId: from.id,
+      toId: linux.id,
+      kind: "artifact",
+      lane: "full",
+      body: "Скилл + обложка ролика. Видео для SMM кладите сюда же, в полный канал своего роя.",
+      scope: "swarm",
+      attachments: [skill, cover],
+    });
+    this.send({
+      roomId: `${swarm.id}:pager`,
+      swarmId: swarm.id,
+      fromId: from.id,
+      toId: linux.id,
+      kind: "secret",
+      lane: "full",
+      body: "Доступ в MAG Studio — запечатанный конверт, только свой рой.",
+      scope: "swarm",
+      secret: { label: "MAG Studio SMM", login: "smm-linux", password: "demo-not-for-ether" },
+    });
+    return { ok: true };
   }
 
   playScene(userId: string) {
@@ -476,15 +646,36 @@ class HiveStore extends EventEmitter {
     }
   }
 
-  private trimPager(swarmId: string) {
-    const kept: Message[] = [];
-    const swarmMsgs = this.world.messages.filter((message) => message.swarmId === swarmId && message.scope === "swarm");
-    const extra = swarmMsgs.sort((a, b) => b.createdAt - a.createdAt).slice(SWARM_KEEP);
+  private sealSecret(swarmId: string, secret: { label: string; login: string; password: string }) {
+    const id = nid("sec-");
+    const sealed = encryptSecret(
+      JSON.stringify({ login: secret.login, password: secret.password }),
+      swarmCryptoKey(swarmId),
+    );
+    const record: SealedSecret = {
+      id,
+      swarmId,
+      label: (secret.label || "конверт").slice(0, 80),
+      ciphertext: sealed.ciphertext,
+      iv: sealed.iv,
+      tag: sealed.tag,
+      opened: false,
+    };
+    this.world.secrets.push(record);
+    return id;
+  }
+
+  private trimLane(swarmId: string, lane: MessageLane) {
+    const keep = lane === "pager" ? SWARM_KEEP : SWARM_CHAT_KEEP;
+    const laneMsgs = this.world.messages.filter(
+      (message) =>
+        message.swarmId === swarmId &&
+        message.scope === "swarm" &&
+        (message.lane ?? "pager") === lane,
+    );
+    const extra = laneMsgs.sort((a, b) => b.createdAt - a.createdAt).slice(keep);
     const drop = new Set(extra.map((message) => message.id));
-    for (const message of this.world.messages) {
-      if (!drop.has(message.id)) kept.push(message);
-    }
-    this.world.messages = kept;
+    this.world.messages = this.world.messages.filter((message) => !drop.has(message.id));
   }
 
   private purgeExpired() {
@@ -504,8 +695,10 @@ class HiveStore extends EventEmitter {
   }
 }
 
-function inferKind(body: string, scope: Message["scope"]): Message["kind"] {
+function inferKind(body: string, scope: Message["scope"], lane: MessageLane): Message["kind"] {
   if (scope === "federation") return "page";
+  if (lane === "chat") return "chat";
+  if (lane === "full") return "artifact";
   const text = body.toLowerCase();
   if (text.includes("поставил задачу") || text.includes("жду исполнения")) return "task_assigned";
   if (text.includes("проблем") || text.includes("блок")) return "blocked";
