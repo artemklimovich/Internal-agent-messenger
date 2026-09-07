@@ -33,6 +33,41 @@ export const SWARM_KEEP = 80;
 export const SWARM_CHAT_KEEP = 400;
 export const MAX_FILE_BYTES = 32 * 1024 * 1024;
 
+/** Operator-tunable rules. Defaults match the open-source slice; nothing here is a hard protocol law. */
+export interface SwarmPolicy {
+  overlayOnly: boolean;
+  etherInbound: boolean;
+  etherPagerOnly: boolean;
+  etherAllowFiles: boolean;
+  overlayWake: boolean;
+  etherMax: number;
+  swarmPageMax: number;
+}
+
+export const DEFAULT_POLICY: SwarmPolicy = {
+  overlayOnly: false,
+  etherInbound: true,
+  etherPagerOnly: true,
+  etherAllowFiles: false,
+  overlayWake: true,
+  etherMax: FED_PAGE_MAX,
+  swarmPageMax: SWARM_PAGE_MAX,
+};
+
+export function resolvePolicy(swarm: { overlayOnly?: boolean; policy?: Partial<SwarmPolicy> }): SwarmPolicy {
+  const overlayOnly = swarm.policy?.overlayOnly ?? Boolean(swarm.overlayOnly);
+  const stored = swarm.policy;
+  return {
+    overlayOnly,
+    etherInbound: stored?.etherInbound ?? (stored ? DEFAULT_POLICY.etherInbound : !overlayOnly),
+    etherPagerOnly: stored?.etherPagerOnly ?? DEFAULT_POLICY.etherPagerOnly,
+    etherAllowFiles: stored?.etherAllowFiles ?? DEFAULT_POLICY.etherAllowFiles,
+    overlayWake: stored?.overlayWake ?? DEFAULT_POLICY.overlayWake,
+    etherMax: stored?.etherMax ?? DEFAULT_POLICY.etherMax,
+    swarmPageMax: stored?.swarmPageMax ?? DEFAULT_POLICY.swarmPageMax,
+  };
+}
+
 export interface User {
   id: string;
   email: string;
@@ -60,6 +95,7 @@ export interface Swarm {
   peerInviteHash?: string;
   magConnect?: MagConnect;
   overlayOnly?: boolean;
+  policy?: Partial<SwarmPolicy>;
 }
 
 export interface PeerHub {

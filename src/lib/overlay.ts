@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { encryptSecret, decryptSecret } from "./crypto-security";
 import { swarmCryptoKey } from "./blobs";
 import { wgKeyPair } from "./tunnels";
+import { resolvePolicy } from "./types";
 import type { Swarm, Tunnel } from "./types";
 
 export const HUB_OVERLAY_IP = "10.42.0.1";
@@ -40,7 +41,7 @@ export function clientIp(request: Request) {
 }
 
 export function assertOverlayClient(request: Request, swarm: Swarm | undefined) {
-  if (!swarm?.overlayOnly) return;
+  if (!swarm || !resolvePolicy(swarm).overlayOnly) return;
   if (process.env.HIVE_BIND === HUB_OVERLAY_IP) return;
   if (process.env.NODE_ENV !== "production") return;
   const ip = clientIp(request);

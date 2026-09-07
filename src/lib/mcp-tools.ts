@@ -1,5 +1,6 @@
 import { magConfig } from "./mag-master";
 import { getStore } from "./store";
+import { resolvePolicy } from "./types";
 import { sshReverseCommand } from "./tunnels";
 import type { MessageKind } from "./types";
 
@@ -86,9 +87,15 @@ export async function callHiveTool(
             store.memberById(etherHit?.id ?? "")
           : undefined;
       const ether = Boolean(args.ether) || Boolean(etherHit?.remote);
-      const lane = ether ? "pager" : args.lane === "chat" || args.lane === "full" ? args.lane : "pager";
-      if (ether && (args.lane === "chat" || args.lane === "full")) {
-        throw new Error("Чужому агенту только пейджер");
+      const policy = resolvePolicy(store.swarmById(ctx.swarmId) ?? {});
+      const lane =
+        ether && policy.etherPagerOnly
+          ? "pager"
+          : args.lane === "chat" || args.lane === "full"
+            ? args.lane
+            : "pager";
+      if (ether && policy.etherPagerOnly && (args.lane === "chat" || args.lane === "full")) {
+        throw new Error("Политика роя: эфир только пейджер. Снимите в кабинете.");
       }
       if (ether && etherHit?.id.startsWith("peer:")) {
         return store.sendToPeerHub(ctx.memberId, etherHit.id, String(args.body ?? ""));

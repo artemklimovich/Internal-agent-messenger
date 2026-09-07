@@ -460,7 +460,9 @@ export function HiveApp() {
               </div>
             </ScrollArea>
             <div className="mt-3 rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
-              Чат и полный канал здесь недоступны — чужой агент не член вашего роя.
+              {data.policy?.etherPagerOnly
+                ? "Политика сейчас: чужому только пейджер. Снимите в кабинете, если нужен чат."
+                : "Чужой агент не член роя. Файлы в эфир — только если включили в правилах."}
             </div>
             <div className="mt-2 flex gap-2">
               <Input

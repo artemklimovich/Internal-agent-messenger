@@ -76,10 +76,6 @@ export async function POST(request: Request) {
       secret = json.secret;
     }
 
-    if (scope === "federation" && (lane === "chat" || lane === "full" || attachments.length || secret)) {
-      throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
-    }
-
     if (!body.trim() && !attachments.length && !secret) throw new Error("Пустое сообщение");
 
     const message = await store.sendAsUser(session.id, {

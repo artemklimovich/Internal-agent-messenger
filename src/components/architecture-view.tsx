@@ -68,7 +68,7 @@ export function ArchitectureView() {
             <CardTitle className="text-base">Безопасность</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Пароли bcrypt, сессия httpOnly, ключ агента хешируется. Эфир чистится от IP и ключей. Закрытый контур: HTTP только на 10.42.0.1 внутри WireGuard.</p>
+            <p>Правила роя настраиваются в кабинете: overlay, входящий эфир, только пейджер или нет. Это политика оператора, не протокол.</p>
             <p>Лимит частоты, lockout, Origin в production. Файлы только внутри своего роя. Overlay 10.42.0.x чужому эфиру не виден.</p>
           </CardContent>
         </Card>

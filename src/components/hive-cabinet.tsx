@@ -4,7 +4,7 @@ import { ArchitectureView } from "@/components/architecture-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { HivePayload } from "@/hooks/use-hive";
-import type { Member, OsKind } from "@/lib/types";
+import type { Member, OsKind, SwarmPolicy } from "@/lib/types";
 import { Bot } from "lucide-react";
 import { useState } from "react";
 
@@ -81,7 +81,7 @@ export function HiveCabinet({
         <h3 className="font-medium">Закрытый контур (WireGuard)</h3>
         <p className="text-xs text-muted-foreground">
           {data.overlay?.note} Хаб: {data.overlay?.hubUrl}. С улицы только UDP {data.overlay?.listenPort} (
-          {data.overlay?.endpoint}). Чужих в туннель не пускаем.
+          {data.overlay?.endpoint}). Overlay — ваш контур; пускать ли чужой эфир — ниже, в правилах.
         </p>
         <Button
           size="sm"
@@ -101,6 +101,8 @@ export function HiveCabinet({
           </p>
         ) : null}
       </section>
+
+      <PolicyRules data={data} cabinet={cabinet} onRefresh={onRefresh} onError={onError} />
 
       <section className="space-y-2 rounded-xl border p-3">
         <h3 className="font-medium">MAG Master External MCP</h3>
@@ -250,6 +252,72 @@ export function HiveCabinet({
       ) : null}
       <ArchitectureView />
     </div>
+  );
+}
+
+function PolicyRules({
+  data,
+  cabinet,
+  onRefresh,
+  onError,
+}: {
+  data: HivePayload;
+  cabinet: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  onRefresh: () => Promise<unknown>;
+  onError: (value: string | null) => void;
+}) {
+  const policy = data.policy;
+  function toggle(key: keyof SwarmPolicy, value: boolean | number) {
+    void cabinet({ action: "policy", policy: { [key]: value } })
+      .then(() => onRefresh())
+      .catch((err: Error) => onError(err.message));
+  }
+  if (!policy) return null;
+  return (
+    <section className="space-y-2 rounded-xl border p-3">
+      <h3 className="font-medium">Правила роя (настройки, не вшитый закон)</h3>
+      <p className="text-xs text-muted-foreground">
+        MAG Master по-прежнему держит задачи. Здесь только как Hive будит исполнителей и что пускает в эфир.
+      </p>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={policy.etherInbound} onChange={(event) => toggle("etherInbound", event.target.checked)} />
+        Входящий эфир с чужих хабов
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={policy.etherPagerOnly} onChange={(event) => toggle("etherPagerOnly", event.target.checked)} />
+        Эфир только пейджер (выключите, если нужен чат чужому)
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={policy.etherAllowFiles} onChange={(event) => toggle("etherAllowFiles", event.target.checked)} />
+        Файлы и конверты в эфир (опасно: чужой контур)
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={policy.overlayWake} onChange={(event) => toggle("overlayWake", event.target.checked)} />
+        Будить агента по overlay IP, если закрытый контур включён
+      </label>
+      <div className="flex flex-wrap gap-3 text-sm">
+        <label className="flex items-center gap-2">
+          Педжер эфира, знаков
+          <Input
+            className="w-20"
+            type="number"
+            defaultValue={policy.etherMax}
+            key={`e-${policy.etherMax}`}
+            onBlur={(event) => toggle("etherMax", Number(event.target.value))}
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          Педжер своего роя, знаков
+          <Input
+            className="w-20"
+            type="number"
+            defaultValue={policy.swarmPageMax}
+            key={`s-${policy.swarmPageMax}`}
+            onBlur={(event) => toggle("swarmPageMax", Number(event.target.value))}
+          />
+        </label>
+      </div>
+    </section>
   );
 }
 

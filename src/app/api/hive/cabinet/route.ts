@@ -3,7 +3,7 @@ import { assertSameOrigin } from "@/lib/crypto-security";
 import { fail } from "@/lib/http";
 import { probeMagKey } from "@/lib/mag-master";
 import { getStore } from "@/lib/store";
-import type { OsKind } from "@/lib/types";
+import type { OsKind, SwarmPolicy } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,6 +31,7 @@ export async function POST(request: Request) {
       peerId?: string;
       publicUrl?: string;
       overlayOnly?: boolean;
+      policy?: Record<string, unknown>;
     };
     const store = getStore();
     switch (body.action) {
@@ -95,6 +96,8 @@ export async function POST(request: Request) {
         return Response.json(store.setPublicUrl(session.id, body.publicUrl ?? ""));
       case "overlay-only":
         return Response.json(store.setOverlayOnly(session.id, Boolean(body.overlayOnly)));
+      case "policy":
+        return Response.json(store.setPolicy(session.id, (body.policy ?? {}) as Partial<SwarmPolicy>));
       default:
         throw new Error("unknown action");
     }

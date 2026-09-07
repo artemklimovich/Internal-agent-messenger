@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { EtherAgent, Member, Message, MessageLane, SessionUser, Tunnel } from "@/lib/types";
+import type { EtherAgent, Member, Message, MessageLane, SessionUser, SwarmPolicy, Tunnel } from "@/lib/types";
 
 export interface HivePayload {
   ok: boolean;
@@ -31,6 +31,7 @@ export interface HivePayload {
   peers?: Array<{ id: string; url: string; name: string; lastOkAt?: number; lastError?: string }>;
   publicUrl?: string;
   overlayOnly?: boolean;
+  policy?: SwarmPolicy;
   overlay?: {
     hubIp: string;
     hubUrl: string;

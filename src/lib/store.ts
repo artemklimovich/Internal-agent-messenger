@@ -41,9 +41,9 @@ import type {
   Tunnel,
   User,
   World,
+  SwarmPolicy,
 } from "./types";
 import {
-  FED_PAGE_MAX,
   FED_PAGE_TTL_MS,
   SCHEMA_VERSION,
   SWARM_CHAT_KEEP,
@@ -52,8 +52,8 @@ import {
   SWARM_FULL_CAPTION_MAX,
   SWARM_FULL_TTL_MS,
   SWARM_KEEP,
-  SWARM_PAGE_MAX,
   SWARM_PAGE_TTL_MS,
+  resolvePolicy,
 } from "./types";
 
 const DATA_PATH = join(process.cwd(), ".data", "hive.json");
@@ -237,21 +237,22 @@ class HiveStore extends EventEmitter {
         gatewayUrl: swarm.magConnect?.gatewayUrl,
         docs: "https://magaicrm.ru/help/docs/mcp/external-agents",
       },
-      overlayOnly: Boolean(swarm.overlayOnly),
+      overlayOnly: resolvePolicy(swarm).overlayOnly,
+      policy: resolvePolicy(swarm),
       overlay: {
         hubIp: "10.42.0.1",
         hubUrl: overlayHubUrl(),
         net: "10.42.0.0/24",
         listenPort: 51820,
         endpoint: overlayEndpoint(),
-        note: swarm.overlayOnly
-          ? "Свой рой только по WireGuard. HTTP на 10.42.0.1. UDP 51820 — вход с NAT. Чужой эфир внутрь не пускаем."
-          : "Включите «закрытый контур» в кабинете — рация своего роя поедет только внутри overlay.",
+        note: resolvePolicy(swarm).overlayOnly
+          ? "HTTP своего роя на overlay. UDP 51820 — вход с NAT. Входящий эфир — отдельный переключатель."
+          : "Можно включить закрытый контур: рация своего роя поедет внутри WireGuard. Это настройка, не закон протокола.",
       },
       publicUrl: swarm.publicUrl ?? process.env.HIVE_PUBLIC_URL ?? "",
       peerInviteSet: Boolean(swarm.peerInviteHash),
       lanes: {
-        pager: { max: SWARM_PAGE_MAX, ttlHours: 24, etherMax: FED_PAGE_MAX, etherTtlHours: 2 },
+        pager: { max: resolvePolicy(swarm).swarmPageMax, ttlHours: 24, etherMax: resolvePolicy(swarm).etherMax, etherTtlHours: 2 },
         chat: { max: SWARM_CHAT_MAX, ttlDays: 7, ownOnly: true },
         full: { captionMax: SWARM_FULL_CAPTION_MAX, ttlDays: 30, fileMb: 32, ownOnly: true },
       },
@@ -259,8 +260,8 @@ class HiveStore extends EventEmitter {
         mode: "pager" as const,
         swarmTtlHours: 24,
         etherTtlHours: 2,
-        swarmMax: SWARM_PAGE_MAX,
-        etherMax: FED_PAGE_MAX,
+        swarmMax: resolvePolicy(swarm).swarmPageMax,
+        etherMax: resolvePolicy(swarm).etherMax,
       },
     };
   }
@@ -301,11 +302,20 @@ class HiveStore extends EventEmitter {
     if (!from) throw new Error("unknown sender");
     const requestedLane: MessageLane = input.lane ?? "pager";
     const scope = input.scope ?? "swarm";
-    const lane: MessageLane = scope === "federation" ? "pager" : requestedLane;
+    const fromSwarm = this.world.swarms.find((item) => item.id === from.swarmId);
+    const policy = resolvePolicy(fromSwarm ?? {});
+    const lane: MessageLane =
+      scope === "federation" && policy.etherPagerOnly ? "pager" : requestedLane;
     const to = input.toId ? this.memberById(input.toId) : undefined;
     if (scope === "federation") {
-      if (requestedLane !== "pager" || input.attachments?.length || input.secret) {
-        throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
+      const blockedFiles = Boolean(input.attachments?.length || input.secret) && !policy.etherAllowFiles;
+      const blockedChat = policy.etherPagerOnly && requestedLane !== "pager";
+      if (blockedFiles || blockedChat) {
+        throw new Error(
+          policy.etherPagerOnly
+            ? "Политика роя: чужому агенту только пейджер. Снимите «эфир только пейджер» в кабинете."
+            : "Политика роя: файлы в эфир выключены.",
+        );
       }
       if (!to) throw new Error("Эфир только к чужому агенту");
       const ghostHop = Boolean(from.peerHubId || to.peerHubId);
@@ -319,12 +329,12 @@ class HiveStore extends EventEmitter {
 
     const max =
       scope === "federation"
-        ? FED_PAGE_MAX
+        ? policy.etherMax
         : lane === "chat"
           ? SWARM_CHAT_MAX
           : lane === "full"
             ? SWARM_FULL_CAPTION_MAX
-            : SWARM_PAGE_MAX;
+            : policy.swarmPageMax;
     const raw = (input.body ?? "").trim().slice(0, max);
     const body = scope === "federation" ? stripFederationBody(raw, max) : raw;
     const attachments = lane === "full" ? [...(input.attachments ?? [])] : [];
@@ -332,8 +342,11 @@ class HiveStore extends EventEmitter {
 
     let secretId: string | undefined;
     if (input.secret) {
-      if (scope !== "swarm" || lane !== "full") {
-        throw new Error("Секреты только в полной связи своего роя");
+      if (lane !== "full") {
+        throw new Error("Секреты только в полном канале");
+      }
+      if (scope !== "swarm" && !policy.etherAllowFiles) {
+        throw new Error("Политика роя: секреты в эфир выключены");
       }
       secretId = this.sealSecret(from.swarmId, input.secret);
       attachments.push({
@@ -405,21 +418,31 @@ class HiveStore extends EventEmitter {
     const from = this.world.members.find((member) => member.userId === userId);
     if (!swarm || !from) throw new Error("unauthorized");
     if (input.toId?.startsWith("peer:")) {
-      if (input.lane === "chat" || input.lane === "full" || input.attachments?.length || input.secret) {
-        throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
+      const policy = resolvePolicy(swarm);
+      const blocked =
+        (policy.etherPagerOnly && (input.lane === "chat" || input.lane === "full")) ||
+        (!policy.etherAllowFiles && (input.attachments?.length || input.secret));
+      if (blocked) {
+        throw new Error("Политика роя запрещает этот слой в эфир. Кабинет → правила.");
       }
       if (!rateLimit(`send:${userId}:ether`, 8, 60_000)) throw new Error("Слишком часто.");
       return this.sendToPeerHub(from.id, input.toId, input.body);
     }
     const to = input.toId ? this.memberById(input.toId) : undefined;
     const scope = input.scope ?? (to && to.swarmId !== swarm.id ? "federation" : "swarm");
-    const lane = scope === "federation" ? "pager" : (input.lane ?? "pager");
+    const policy = resolvePolicy(swarm);
+    const lane =
+      scope === "federation" && policy.etherPagerOnly ? "pager" : (input.lane ?? "pager");
     const limit = scope === "federation" ? 8 : lane === "full" ? 12 : 40;
     if (!rateLimit(`send:${userId}:${lane}`, limit, 60_000)) {
       throw new Error("Слишком часто.");
     }
-    if (scope === "federation" && (input.lane === "chat" || input.lane === "full" || input.attachments?.length || input.secret)) {
-      throw new Error("Чужому агенту только пейджер. Чат, файлы и секреты — в своём рое.");
+    if (scope === "federation") {
+      const blockedFiles = Boolean(input.attachments?.length || input.secret) && !policy.etherAllowFiles;
+      const blockedChat = policy.etherPagerOnly && (input.lane === "chat" || input.lane === "full");
+      if (blockedFiles || blockedChat) {
+        throw new Error("Политика роя запрещает этот слой в эфир. Кабинет → правила.");
+      }
     }
     const roomId = scope === "federation" ? "ether" : `${swarm.id}:pager`;
     return this.send({
@@ -743,6 +766,7 @@ class HiveStore extends EventEmitter {
     const swarm = this.swarmByOwner(userId);
     if (!swarm) throw new Error("unauthorized");
     swarm.overlayOnly = enabled;
+    swarm.policy = { ...resolvePolicy(swarm), overlayOnly: enabled };
     if (enabled) {
       const tunnels = this.world.tunnels.filter(
         (tunnel) => tunnel.swarmId === swarm.id && !this.memberById(tunnel.agentId)?.peerHubId,
@@ -763,12 +787,29 @@ class HiveStore extends EventEmitter {
     return this.overlayBundle(swarm.id);
   }
 
+  setPolicy(userId: string, patch: Partial<SwarmPolicy>) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    if (patch.overlayOnly === true && !resolvePolicy(swarm).overlayOnly) {
+      this.setOverlayOnly(userId, true);
+    }
+    const next = { ...resolvePolicy(swarm), ...patch };
+    if (typeof next.etherMax === "number") next.etherMax = Math.min(2000, Math.max(40, Math.floor(next.etherMax)));
+    if (typeof next.swarmPageMax === "number") {
+      next.swarmPageMax = Math.min(2000, Math.max(80, Math.floor(next.swarmPageMax)));
+    }
+    swarm.policy = next;
+    swarm.overlayOnly = next.overlayOnly;
+    this.emitState(swarm.id);
+    return { policy: resolvePolicy(swarm) };
+  }
+
   overlayBundle(swarmId: string) {
     const swarm = this.world.swarms.find((item) => item.id === swarmId);
     if (!swarm) throw new Error("unknown swarm");
     const tunnels = this.world.tunnels.filter((tunnel) => tunnel.swarmId === swarmId);
     return {
-      overlayOnly: Boolean(swarm.overlayOnly),
+      overlayOnly: resolvePolicy(swarm).overlayOnly,
       hubIp: HUB_OVERLAY_IP,
       hubUrl: overlayHubUrl(),
       endpoint: overlayEndpoint(),
@@ -869,7 +910,7 @@ class HiveStore extends EventEmitter {
   federationEther(token: string) {
     const swarm = this.swarmByPeerKey(token);
     if (!swarm) throw new Error("unauthorized");
-    if (swarm.overlayOnly) throw new Error("Закрытый контур: входящий эфир выключен");
+    if (!resolvePolicy(swarm).etherInbound) throw new Error("Политика роя: входящий эфир выключен");
     return this.world.members
       .filter((member) => member.swarmId === swarm.id && member.kind === "agent" && member.discoverable)
       .map((member) => ({
@@ -891,7 +932,7 @@ class HiveStore extends EventEmitter {
   ) {
     const swarm = this.swarmByPeerKey(token);
     if (!swarm) throw new Error("unauthorized");
-    if (swarm.overlayOnly) throw new Error("Закрытый контур: входящий эфир выключен");
+    if (!resolvePolicy(swarm).etherInbound) throw new Error("Политика роя: входящий эфир выключен");
     if (!rateLimit(`peer-in:${swarm.id}`, 20, 60_000)) throw new Error("Слишком часто.");
     const to = this.world.members.find(
       (member) =>
@@ -921,7 +962,7 @@ class HiveStore extends EventEmitter {
       };
       this.world.members.push(from);
     }
-    const body = stripFederationBody(input.body, FED_PAGE_MAX);
+    const body = stripFederationBody(input.body, resolvePolicy(swarm).etherMax);
     if (!body) throw new Error("Пустой пейдж");
     return this.send({
       roomId: "ether",
@@ -941,7 +982,7 @@ class HiveStore extends EventEmitter {
     const swarm = from ? this.world.swarms.find((item) => item.id === from.swarmId) : undefined;
     const peer = this.world.peerHubs.find((item) => item.id === peerId && item.ownerSwarmId === swarm?.id);
     if (!swarm || !from || !peer) throw new Error("Чужой хаб не найден");
-    const cleaned = stripFederationBody(body, FED_PAGE_MAX);
+    const cleaned = stripFederationBody(body, resolvePolicy(swarm).etherMax);
     if (!cleaned) throw new Error("Пустой пейдж");
     const token = decryptSecret(peer.tokenEnc, swarmCryptoKey(swarm.id));
     const response = await fetch(`${peer.url}/api/federation/page`, {
@@ -1015,7 +1056,9 @@ class HiveStore extends EventEmitter {
     for (const target of targets) {
       const tunnel = this.world.tunnels.find((item) => item.agentId === target.id);
       const overlayWake =
-        swarm?.overlayOnly && tunnel ? `http://${tunnel.overlayIp}:18790/hive/wake` : null;
+        swarm && resolvePolicy(swarm).overlayWake && resolvePolicy(swarm).overlayOnly && tunnel
+          ? `http://${tunnel.overlayIp}:18790/hive/wake`
+          : null;
       const urls = [...new Set([target.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null, overlayWake].filter(Boolean))] as string[];
       for (const url of urls) {
         void fetch(url, {
