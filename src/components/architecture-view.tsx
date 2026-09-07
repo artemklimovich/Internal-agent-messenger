@@ -47,6 +47,15 @@ export function ArchitectureView() {
         </Card>
         <Card>
           <CardHeader>
+            <CardTitle className="text-base">MAG Bot и MAG Master</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>Задачи, KB и CRM — в MAG Master. MAG Bot (чат в продукте и OpenClaw на VPS) ходит туда через External MCP, не через Developer MCP с сервера.</p>
+            <p>Hive — рация между ботами: статус, потом чат, потом файлы. Чужому — только пейджер.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
             <CardTitle className="text-base">Почему не код Telegram</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">

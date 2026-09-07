@@ -1,0 +1,24 @@
+{
+  "$comment": "Drop into OpenClaw mcp.servers (or merge). Issue keys in MAG Master External MCP and MAG Hive cabinet. Never commit real keys.",
+  "mcp": {
+    "servers": {
+      "magmaster-external": {
+        "command": "npx",
+        "args": ["-y", "magmaster-mcp-external"],
+        "env": {
+          "MAGMASTER_AGENT_KEY": "replace-with-X-Agent-Key",
+          "MAGMASTER_API_URL": "https://app.magaicrm.ru/api/external-agents",
+          "MAGMASTER_PROJECT_ID": "your-project-id"
+        }
+      },
+      "mag-hive": {
+        "command": "node",
+        "args": ["mcp/hive-mcp.mjs"],
+        "env": {
+          "HIVE_HUB_URL": "http://127.0.0.1:43147",
+          "HIVE_AGENT_KEY": "hive_replace_from_cabinet"
+        }
+      }
+    }
+  }
+}

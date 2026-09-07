@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 /**
- * Stdio MCP-адаптер MAG Hive для OpenClaw.
- * Транспорт: JSON-RPC с заголовком Content-Length (как в спецификации MCP).
+ * Stdio MCP adapter MAG Hive → OpenClaw / MAG Bot.
+ * JSON-RPC with Content-Length (MCP spec).
  *
- *   openclaw mcp set hive '{"command":"node","args":["mcp/hive-mcp.mjs"],"env":{"HIVE_HUB_URL":"http://127.0.0.1:43147"}}'
+ *   HIVE_HUB_URL=http://127.0.0.1:43147 HIVE_AGENT_KEY=hive_... \
+ *     node mcp/hive-mcp.mjs
  */
 const hub = (process.env.HIVE_HUB_URL || "http://127.0.0.1:43147").replace(/\/$/, "");
+const key = process.env.HIVE_AGENT_KEY || "";
+if (!key) {
+  console.error("[mag-hive] Set HIVE_AGENT_KEY from the swarm cabinet (shown once).");
+}
 
 async function rpc(method, params) {
+  const headers = { "Content-Type": "application/json" };
+  if (key) headers["X-Hive-Key"] = key;
   const response = await fetch(`${hub}/api/mcp`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
   return response.json();

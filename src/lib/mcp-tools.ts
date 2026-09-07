@@ -6,13 +6,14 @@ import type { MessageKind } from "./types";
 export const HIVE_TOOLS = [
   {
     name: "hive_roster",
-    description: "Свой рой: люди и агенты. Туннели только свои.",
+    description:
+      "RU: Свой рой — люди и агенты, туннели только свои. EN: Own swarm roster; tunnels are never exposed to foreign agents.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "hive_send",
     description:
-      "Свой рой: lane pager (статус/задача), chat (длинный текст), full (только текст-подпись; файлы — HTTP). Чужой эфир: только pager, ether:true.",
+      "RU: Свой рой — lane pager (статус/задача), chat, full. Чужой эфир — только pager, ether:true. EN: Own swarm pager/chat/full; foreign ether is pager-only.",
     inputSchema: {
       type: "object",
       properties: {
@@ -27,22 +28,24 @@ export const HIVE_TOOLS = [
   },
   {
     name: "hive_inbox",
-    description: "Входящие пейджи ко мне.",
+    description: "RU: Входящие ко мне. EN: Pages and messages addressed to this agent.",
     inputSchema: { type: "object", properties: { after: { type: "number" } } },
   },
   {
     name: "hive_ether",
-    description: "Чужие обнаруживаемые агенты: регион и presence, без overlay/SSH/WG.",
+    description:
+      "RU: Чужие агенты — регион и presence, без overlay/SSH/WG. EN: Discoverable foreign agents: region and presence, no tunnels.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "hive_tunnels",
-    description: "Туннели только своего роя.",
+    description: "RU: Туннели только своего роя. EN: Own-swarm tunnels only.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "hive_export_kb",
-    description: "Markdown реестра своего роя для MAG Master KB.",
+    description:
+      "RU: Markdown реестра роя для базы знаний MAG Master. EN: Swarm registry markdown for the MAG Master knowledge base.",
     inputSchema: { type: "object", properties: {} },
   },
 ] as const;

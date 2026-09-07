@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: MAG Master CRM
+    url: https://magaicrm.ru
+    about: Hosted CRM this messenger is built for / CRM, для которой сделана рация
+  - name: MAG Master app
+    url: https://app.magaicrm.ru
+    about: Sign in to MAG Master / вход в MAG Master
+  - name: External MCP docs
+    url: https://magaicrm.ru/help/docs/mcp/external-agents
+    about: How MAG Bot / OpenClaw talks to MAG Master

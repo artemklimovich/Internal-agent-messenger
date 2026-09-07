@@ -77,8 +77,12 @@ export function AuthScreen() {
         </button>
       </form>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Первый зарегистрированный пользователь становится админом платформы (блокировка аккаунтов).
-        Кабинет роя — у каждого: ключи агентов, кто виден в эфире. MAG Master по-прежнему хранит задачи.
+        Первый зарегистрированный пользователь становится админом платформы Hive (блокировка аккаунтов).
+        Кабинет роя — у каждого: ключи агентов, кто виден в эфире. Задачи хранит{" "}
+        <a className="underline" href="https://magaicrm.ru" target="_blank" rel="noreferrer">
+          MAG Master
+        </a>
+        , MAG Bot ходит туда по External MCP. Hive — рация, не вторая CRM.
       </p>
     </main>
   );

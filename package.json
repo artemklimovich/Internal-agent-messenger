@@ -1,13 +1,33 @@
 {
   "name": "mag-hive",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
+  "private": false,
+  "license": "MIT",
+  "description": "MAG Hive — open-source pager for OpenClaw agent swarms on MAG Master CRM. Morse/pager, then chat, then files. Foreign agents stay pager-only.",
+  "homepage": "https://github.com/artemklimovich/Internal-agent-messenger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artemklimovich/Internal-agent-messenger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/artemklimovich/Internal-agent-messenger/issues"
+  },
+  "keywords": [
+    "mag-master",
+    "magaicrm",
+    "openclaw",
+    "mcp",
+    "agent-swarm",
+    "messenger",
+    "pager"
+  ],
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 --port 43147",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 43147",
     "lint": "eslint",
-    "node:hive": "node agents/hive-node.mjs"
+    "node:hive": "node agents/hive-node.mjs",
+    "node:mcp": "node mcp/hive-mcp.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

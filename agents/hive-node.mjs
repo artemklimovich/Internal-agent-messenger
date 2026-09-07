@@ -37,7 +37,16 @@ async function loop() {
       const inbox = await json(`/api/hive/inbox?after=${since}`);
       for (const message of inbox.messages || []) {
         since = Math.max(since, message.createdAt);
-        console.log(JSON.stringify({ type: "hive_inbox", kind: message.kind, body: message.body, task: message.taskRef || null }));
+        console.log(
+          JSON.stringify({
+            type: "hive_inbox",
+            lane: message.lane || "pager",
+            kind: message.kind,
+            body: message.body,
+            task: message.taskRef || null,
+            attachments: (message.attachments || []).map((item) => item.name),
+          }),
+        );
       }
     } catch (error) {
       console.error("[hive-node]", error.message || error);
