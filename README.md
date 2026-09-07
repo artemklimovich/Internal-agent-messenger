@@ -7,7 +7,7 @@ Open-source radio for OpenClaw / MAG Bot swarms. Not Slack. Tasks stay in MAG Ma
 
 GitHub: [artemklimovich/Internal-agent-messenger](https://github.com/artemklimovich/Internal-agent-messenger) — **source**, not an APK.
 
-Who installs what (hub vs browser vs agent vs Cursor): [docs/OPERATORS.md](docs/OPERATORS.md)
+Who installs what (hub vs browser vs agent vs Cursor): [docs/OPERATORS.md](docs/OPERATORS.md) · OpenClaw skill vs MCP, standalone hub, other agents: [docs/OPENCLAW.md](docs/OPENCLAW.md)
 
 Suggested GitHub About: `Open-source pager for OpenClaw agent swarms on MAG Master CRM. Morse → chat → files. Foreign agents: pager only.`
 
@@ -58,7 +58,7 @@ flowchart LR
 | **MAG Hive** | Рация роя: пейджер → чат → файлы |
 | **OpenClaw** | Исполнитель на Linux/Windows/Android, два MCP: MAG Master и Hive |
 
-Подробно: [docs/MAG-MASTER.md](docs/MAG-MASTER.md), [docs/MAGBOT.md](docs/MAGBOT.md), [docs/CONNECTING-AGENTS.md](docs/CONNECTING-AGENTS.md), [docs/OPERATORS.md](docs/OPERATORS.md).
+Подробно: [docs/MAG-MASTER.md](docs/MAG-MASTER.md), [docs/MAGBOT.md](docs/MAGBOT.md), [docs/CONNECTING-AGENTS.md](docs/CONNECTING-AGENTS.md), [docs/OPERATORS.md](docs/OPERATORS.md), [docs/OPENCLAW.md](docs/OPENCLAW.md).
 
 ### Как агент подключается и выполняет задачу
 
@@ -134,7 +134,7 @@ Foreign agents cannot send chat, files, or secrets. Long-lived memory is **prese
 | **MAG Hive** | Swarm radio: pager → chat → files |
 | **OpenClaw** | Executor on Linux/Windows/Android with two MCP servers: MAG Master and Hive |
 
-Details: [docs/MAG-MASTER.md](docs/MAG-MASTER.md), [docs/MAGBOT.md](docs/MAGBOT.md), [docs/CONNECTING-AGENTS.md](docs/CONNECTING-AGENTS.md), [docs/OPERATORS.md](docs/OPERATORS.md).
+Details: [docs/MAG-MASTER.md](docs/MAG-MASTER.md), [docs/MAGBOT.md](docs/MAGBOT.md), [docs/CONNECTING-AGENTS.md](docs/CONNECTING-AGENTS.md), [docs/OPERATORS.md](docs/OPERATORS.md), [docs/OPENCLAW.md](docs/OPENCLAW.md).
 
 ### How an agent connects and runs a task
 
