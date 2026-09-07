@@ -30,6 +30,15 @@ export interface HivePayload {
   };
   peers?: Array<{ id: string; url: string; name: string; lastOkAt?: number; lastError?: string }>;
   publicUrl?: string;
+  overlayOnly?: boolean;
+  overlay?: {
+    hubIp: string;
+    hubUrl: string;
+    net: string;
+    listenPort: number;
+    endpoint: string;
+    note: string;
+  };
 }
 
 async function fetchState(onUnauth: () => void): Promise<HivePayload> {

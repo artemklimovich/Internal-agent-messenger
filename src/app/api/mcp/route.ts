@@ -1,5 +1,6 @@
 import { getSession } from "@/lib/auth";
 import { callHiveTool, HIVE_TOOLS } from "@/lib/mcp-tools";
+import { assertOverlayClient } from "@/lib/overlay";
 import { getStore } from "@/lib/store";
 import { startSwarmRuntime } from "@/lib/swarm-runtime";
 
@@ -18,6 +19,7 @@ async function actor(request: Request) {
   if (key) {
     const agent = getStore().agentByKey(key);
     if (!agent) throw new Error("unauthorized");
+    assertOverlayClient(request, getStore().swarmById(agent.swarmId));
     return { swarmId: agent.swarmId, memberId: agent.id };
   }
   const session = await getSession();

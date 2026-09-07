@@ -187,7 +187,7 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
       swarmId,
       agentId: byHandle.orchestrator.id,
       kind: "both",
-      overlayIp: "10.42.0.1",
+      overlayIp: "10.42.0.2",
       status: "up",
       ssh: {
         host: "magtask.internal",
@@ -200,7 +200,7 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
         publicKey: "oRch3str4t0rDemoKeyAAAAAAAAAAAAAAAAAAAAAA=",
         endpoint: "magtask.internal:51820",
         listenPort: 51820,
-        allowedIps: "10.42.0.1/32",
+        allowedIps: "10.42.0.2/32",
         lastHandshakeAt: t,
         fallback: false,
       },
@@ -212,7 +212,7 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
       swarmId,
       agentId: byHandle.linux.id,
       kind: "ssh",
-      overlayIp: "10.42.0.2",
+      overlayIp: "10.42.0.3",
       status: "up",
       ssh: {
         host: "devbox.internal",
@@ -229,7 +229,7 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
       swarmId,
       agentId: byHandle.windows.id,
       kind: "wireguard",
-      overlayIp: "10.42.0.3",
+      overlayIp: "10.42.0.4",
       status: "degraded",
       ssh: {
         host: "win-build.internal",
@@ -241,7 +241,7 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
       wireguard: {
         publicKey: "w1nBu1ld3rDemoKeyAAAAAAAAAAAAAAAAAAAAAAA=",
         listenPort: 51820,
-        allowedIps: "10.42.0.3/32",
+        allowedIps: "10.42.0.4/32",
         lastHandshakeAt: t,
         fallback: true,
       },

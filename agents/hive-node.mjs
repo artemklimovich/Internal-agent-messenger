@@ -55,7 +55,9 @@ async function drainInbox() {
 }
 
 function listenWake() {
-  const server = createServer((request, response) => {
+  const hosts = ["127.0.0.1"];
+  if (process.env.HIVE_OVERLAY_IP) hosts.push(process.env.HIVE_OVERLAY_IP);
+  const handler = (request, response) => {
     if (request.method !== "POST" || request.url !== "/hive/wake") {
       response.writeHead(404);
       response.end();
@@ -75,10 +77,12 @@ function listenWake() {
       response.writeHead(204);
       response.end();
     });
-  });
-  server.listen(wakePort, "127.0.0.1", () => {
-    console.log(`[hive-node] wake 127.0.0.1:${wakePort}/hive/wake (только reverse SSH, не в интернет)`);
-  });
+  };
+  for (const host of hosts) {
+    createServer(handler).listen(wakePort, host, () => {
+      console.log(`[hive-node] wake ${host}:${wakePort}/hive/wake`);
+    });
+  }
 }
 
 async function listenSse() {

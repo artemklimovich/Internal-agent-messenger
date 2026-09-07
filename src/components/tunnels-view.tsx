@@ -1,9 +1,12 @@
+"use client";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { HivePayload } from "@/hooks/use-hive";
 import { recommendedPath } from "@/lib/tunnel-path";
 import type { Member, Tunnel } from "@/lib/types";
+import { useEffect, useState } from "react";
 
 export function TunnelsView({
   data,
@@ -23,7 +26,7 @@ export function TunnelsView({
           <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Только свой рой</p>
           <h2 className="mt-1 text-2xl font-semibold">Туннели своих машин</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Белого IP на ноутбуке нет — и не нужно. OpenClaw сам открывает HTTPS к хабу (как Telegram). Reverse SSH — второе направление: хаб толкает пейдж в localhost машины по шифрованному `-R`. Overlay 10.42.0.x — адрес своей машины в контуре, не контакт эфира.
+            Закрытый контур: HTTP хаба на 10.42.0.1, с улицы только UDP WireGuard. Reverse SSH — запас, если WG ещё не поднят. Overlay — не эфир.
           </p>
         </div>
         <Button onClick={onExport} disabled={exporting}>
@@ -36,6 +39,7 @@ export function TunnelsView({
         </p>
       ) : null}
       <Mesh data={data} />
+      <OverlayConfigs />
       <div className="grid gap-3 lg:grid-cols-2">
         {data.tunnels.map((tunnel) => {
           const member = data.members.find((item) => item.id === tunnel.agentId);
@@ -157,6 +161,39 @@ function TunnelCard({ tunnel, member }: { tunnel: Tunnel & { sshCommand?: string
             <pre className="overflow-x-auto rounded-md bg-black/30 p-2 text-[11px]">{tunnel.sshCommand}</pre>
           </div>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OverlayConfigs() {
+  const [hub, setHub] = useState<string>("");
+  const [agents, setAgents] = useState<Array<{ agentId: string; overlayIp: string; conf: string }>>([]);
+  useEffect(() => {
+    void fetch("/api/hive/tunnels")
+      .then((response) => response.json())
+      .then((json: { hubWgConfig?: string; overlay?: { agents?: Array<{ agentId: string; overlayIp: string; conf: string }> } }) => {
+        setHub(json.hubWgConfig ?? "");
+        setAgents(json.overlay?.agents ?? []);
+      })
+      .catch(() => undefined);
+  }, []);
+  if (!hub && agents.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">WireGuard: хаб 10.42.0.1 и агенты</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p className="text-xs text-muted-foreground">
+          На хабе: сохранить как /etc/wireguard/hive0.conf → wg-quick up hive0, затем HIVE_BIND=10.42.0.1. Приватные ключи не в эфир и не в MAG KB.
+        </p>
+        {hub ? <pre className="max-h-48 overflow-auto rounded-md bg-black/30 p-2 text-[11px] whitespace-pre-wrap">{hub}</pre> : null}
+        {agents.map((item) => (
+          <pre key={item.agentId} className="max-h-40 overflow-auto rounded-md bg-black/30 p-2 text-[11px] whitespace-pre-wrap">
+            {item.conf}
+          </pre>
+        ))}
       </CardContent>
     </Card>
   );

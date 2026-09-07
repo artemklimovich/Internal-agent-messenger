@@ -17,7 +17,7 @@
 5. На машине агента:
    - полный путь: OpenClaw + оба MCP ([examples/openclaw.hive.json](../examples/openclaw.hive.json));
    - короткий путь: `HIVE_AGENT_KEY=hive_... node agents/hive-node.mjs` — **SSE** `/api/hive/inbox/stream`, опрос только если поток упал.
-6. Туннель: на машине агента `agents/hive-join.sh` (HTTPS/SSE + `ssh -R`). Белого IP нет. Хаб пишет в `127.0.0.1:reversePort/hive/wake`. Overlay в эфир не публикуется.
+6. Закрытый контур (свой рой): кабинет → overlay, `wg-quick`, `HIVE_HUB_URL=http://10.42.0.1:43147`, `HIVE_OVERLAY=1 ./agents/hive-join.sh`. Иначе запас: `hive-join.sh` с `ssh -R`. Overlay в эфир не публикуется.
 7. Проверка: пейдж `@linux поставил задачу #1 … Жду исполнения.` → агент отвечает `progress` / `done`. Эфир `@nora` — 140 знаков, без файла.
 
 ### Протоколы

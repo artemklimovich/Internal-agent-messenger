@@ -59,6 +59,7 @@ export interface Swarm {
   publicUrl?: string;
   peerInviteHash?: string;
   magConnect?: MagConnect;
+  overlayOnly?: boolean;
 }
 
 export interface PeerHub {

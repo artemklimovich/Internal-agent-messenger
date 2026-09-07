@@ -1,5 +1,6 @@
 import { getSession } from "@/lib/auth";
 import { fail } from "@/lib/http";
+import { assertOverlayClient } from "@/lib/overlay";
 import { getStore } from "@/lib/store";
 import { startSwarmRuntime } from "@/lib/swarm-runtime";
 
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
     if (key) {
       const agent = store.agentByKey(key);
       if (!agent) throw new Error("unauthorized");
+      assertOverlayClient(request, store.swarmById(agent.swarmId));
       agentId = agent.id;
       store.heartbeat(agent.id);
     } else {

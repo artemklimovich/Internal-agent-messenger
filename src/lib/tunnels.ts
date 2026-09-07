@@ -17,7 +17,8 @@ export function wgKeyPair() {
 
 export function nextOverlayIp(existing: Tunnel[]): string {
   const used = new Set(existing.map((t) => t.overlayIp));
-  for (let i = 1; i < 254; i++) {
+  used.add("10.42.0.1");
+  for (let i = 2; i < 254; i++) {
     const ip = `10.42.0.${i}`;
     if (!used.has(ip)) return ip;
   }

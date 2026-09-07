@@ -17,6 +17,14 @@ import { nid } from "./id";
 import { readAttachment, saveAttachment, swarmCryptoKey } from "./blobs";
 import { createEmptyWorld, handleFromEmail, provisionOwnedSwarm } from "./seed";
 import { hubSshHost, nextOverlayIp, nextReversePort, reverseWakeUrl } from "./tunnels";
+import {
+  agentWireguardConf,
+  HUB_OVERLAY_IP,
+  hubWireguardConf,
+  loadOrCreateAgentPair,
+  overlayEndpoint,
+  overlayHubUrl,
+} from "./overlay";
 import type {
   AgentKey,
   Attachment,
@@ -105,6 +113,10 @@ class HiveStore extends EventEmitter {
 
   swarmByOwner(userId: string) {
     return this.world.swarms.find((swarm) => swarm.ownerUserId === userId);
+  }
+
+  swarmById(id: string) {
+    return this.world.swarms.find((swarm) => swarm.id === id);
   }
 
   memberById(id: string) {
@@ -224,6 +236,17 @@ class HiveStore extends EventEmitter {
         apiUrl: swarm.magConnect?.apiUrl,
         gatewayUrl: swarm.magConnect?.gatewayUrl,
         docs: "https://magaicrm.ru/help/docs/mcp/external-agents",
+      },
+      overlayOnly: Boolean(swarm.overlayOnly),
+      overlay: {
+        hubIp: "10.42.0.1",
+        hubUrl: overlayHubUrl(),
+        net: "10.42.0.0/24",
+        listenPort: 51820,
+        endpoint: overlayEndpoint(),
+        note: swarm.overlayOnly
+          ? "Свой рой только по WireGuard. HTTP на 10.42.0.1. UDP 51820 — вход с NAT. Чужой эфир внутрь не пускаем."
+          : "Включите «закрытый контур» в кабинете — рация своего роя поедет только внутри overlay.",
       },
       publicUrl: swarm.publicUrl ?? process.env.HIVE_PUBLIC_URL ?? "",
       peerInviteSet: Boolean(swarm.peerInviteHash),
@@ -621,12 +644,14 @@ class HiveStore extends EventEmitter {
     const tunnels = this.world.tunnels.filter((item) => item.swarmId === swarm.id);
     const reversePort = nextReversePort(tunnels);
     const wakePort = 18790;
+    const overlayIp = nextOverlayIp(tunnels);
+    const wg = loadOrCreateAgentPair(swarm.id, agent.id);
     this.world.tunnels.push({
       id: `${swarm.id}:tun-${handle}`,
       swarmId: swarm.id,
       agentId: agent.id,
-      kind: "ssh",
-      overlayIp: nextOverlayIp(tunnels),
+      kind: "both",
+      overlayIp,
       status: "down",
       ssh: {
         host: hubSshHost(),
@@ -636,8 +661,14 @@ class HiveStore extends EventEmitter {
         wakePort,
         status: "down",
       },
+      wireguard: {
+        publicKey: wg.publicKey,
+        listenPort: 51820,
+        allowedIps: `${overlayIp}/32`,
+        fallback: false,
+      },
       magSpace: "свой рой",
-      notes: "Reverse SSH: машина без белого IP сама открывает канал. Хаб пишет на 127.0.0.1:порт → hive-node. В эфир не публикуется.",
+      notes: "Reverse SSH или WireGuard. Overlay 10.42.0.x не в эфир.",
     });
     if (!agent.webhookUrl) {
       agent.webhookUrl = `http://127.0.0.1:${reversePort}/hive/wake`;
@@ -706,6 +737,49 @@ class HiveStore extends EventEmitter {
     swarm.publicUrl = url.trim().replace(/\/$/, "");
     this.emitState(swarm.id);
     return { publicUrl: swarm.publicUrl };
+  }
+
+  setOverlayOnly(userId: string, enabled: boolean) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    swarm.overlayOnly = enabled;
+    if (enabled) {
+      const tunnels = this.world.tunnels.filter(
+        (tunnel) => tunnel.swarmId === swarm.id && !this.memberById(tunnel.agentId)?.peerHubId,
+      );
+      for (const tunnel of tunnels) {
+        if (tunnel.overlayIp === HUB_OVERLAY_IP) tunnel.overlayIp = nextOverlayIp(tunnels.filter((item) => item.id !== tunnel.id));
+        const pair = loadOrCreateAgentPair(swarm.id, tunnel.agentId);
+        tunnel.kind = tunnel.ssh ? "both" : "wireguard";
+        tunnel.wireguard = {
+          publicKey: pair.publicKey,
+          listenPort: 51820,
+          allowedIps: `${tunnel.overlayIp}/32`,
+          fallback: false,
+        };
+      }
+    }
+    this.emitState(swarm.id);
+    return this.overlayBundle(swarm.id);
+  }
+
+  overlayBundle(swarmId: string) {
+    const swarm = this.world.swarms.find((item) => item.id === swarmId);
+    if (!swarm) throw new Error("unknown swarm");
+    const tunnels = this.world.tunnels.filter((tunnel) => tunnel.swarmId === swarmId);
+    return {
+      overlayOnly: Boolean(swarm.overlayOnly),
+      hubIp: HUB_OVERLAY_IP,
+      hubUrl: overlayHubUrl(),
+      endpoint: overlayEndpoint(),
+      listenPort: 51820,
+      hubConf: hubWireguardConf(swarmId, tunnels),
+      agents: tunnels.map((tunnel) => ({
+        agentId: tunnel.agentId,
+        overlayIp: tunnel.overlayIp,
+        conf: agentWireguardConf(swarmId, tunnel),
+      })),
+    };
   }
 
   rotatePeerInvite(userId: string) {
@@ -795,6 +869,7 @@ class HiveStore extends EventEmitter {
   federationEther(token: string) {
     const swarm = this.swarmByPeerKey(token);
     if (!swarm) throw new Error("unauthorized");
+    if (swarm.overlayOnly) throw new Error("Закрытый контур: входящий эфир выключен");
     return this.world.members
       .filter((member) => member.swarmId === swarm.id && member.kind === "agent" && member.discoverable)
       .map((member) => ({
@@ -816,6 +891,7 @@ class HiveStore extends EventEmitter {
   ) {
     const swarm = this.swarmByPeerKey(token);
     if (!swarm) throw new Error("unauthorized");
+    if (swarm.overlayOnly) throw new Error("Закрытый контур: входящий эфир выключен");
     if (!rateLimit(`peer-in:${swarm.id}`, 20, 60_000)) throw new Error("Слишком часто.");
     const to = this.world.members.find(
       (member) =>
@@ -935,9 +1011,12 @@ class HiveStore extends EventEmitter {
       task: message.taskRef ?? null,
       fromId: message.fromId,
     });
+    const swarm = this.world.swarms.find((item) => item.id === message.swarmId);
     for (const target of targets) {
       const tunnel = this.world.tunnels.find((item) => item.agentId === target.id);
-      const urls = [...new Set([target.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null].filter(Boolean))] as string[];
+      const overlayWake =
+        swarm?.overlayOnly && tunnel ? `http://${tunnel.overlayIp}:18790/hive/wake` : null;
+      const urls = [...new Set([target.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null, overlayWake].filter(Boolean))] as string[];
       for (const url of urls) {
         void fetch(url, {
           method: "POST",

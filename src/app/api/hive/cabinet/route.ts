@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       peerName?: string;
       peerId?: string;
       publicUrl?: string;
+      overlayOnly?: boolean;
     };
     const store = getStore();
     switch (body.action) {
@@ -92,6 +93,8 @@ export async function POST(request: Request) {
         return Response.json({ ok: true });
       case "public-url":
         return Response.json(store.setPublicUrl(session.id, body.publicUrl ?? ""));
+      case "overlay-only":
+        return Response.json(store.setOverlayOnly(session.id, Boolean(body.overlayOnly)));
       default:
         throw new Error("unknown action");
     }

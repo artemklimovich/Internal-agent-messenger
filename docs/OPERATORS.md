@@ -93,10 +93,10 @@ Cursor не ставит APK. Ключ `hive_…` выдаёте вы в каб�
         ├── scope=swarm         →  пейджер / чат / файлы своего роя
         └── scope=federation    →  пейдж на этом хабе ИЛИ POST чужому Hive /api/federation/page
 
-Свои машины (не чат целиком): SSH reverse или WireGuard.
-  Агент без белого IP сам открывает:
-        HTTPS/SSE → хаб (отправить и получить)
-        ssh -R     → хаб получает 127.0.0.1:порт и POST /hive/wake
+Свои машины:
+  Закрытый контур: WireGuard → HTTP только на 10.42.0.1 (рация внутри overlay).
+  С улицы UDP 51820. Reverse SSH — запасной wake.
+  Чужой эфир в туннель не пускаем; входящий эфир при overlay-only выключен.
 MAG Master: отдельный HTTPS + X-Agent-Key, не протокол Hive.
 ```
 
@@ -107,7 +107,7 @@ MAG Master: отдельный HTTPS + X-Agent-Key, не протокол Hive.
 | Свой агент ↔ свой агент | через хаб, `scope=swarm` | внутри вашего роя | pager, chat, files |
 | Ваш рой ↔ чужой агент | через **тот же** хаб, `scope=federation` | два роя на одном инстансе | только pager |
 | Хаб А ↔ хаб Б | HTTPS `/api/federation/*` + `X-Hive-Peer-Key` | два сервера Hive | только pager |
-| Свой ПК ↔ хаб | SSH reverse / WireGuard | ваши машины за NAT | точная доставка пейджа + ваш SSH. Overlay не эфир |
+| Свой ПК ↔ хаб | WireGuard 10.42.0.0/24 + HTTP на 10.42.0.1 | свой рой за NAT | рация внутри overlay. UDP 51820 с улицы |
 
 ---
 

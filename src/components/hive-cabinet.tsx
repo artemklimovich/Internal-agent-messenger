@@ -78,6 +78,31 @@ export function HiveCabinet({
       {sendError ? <p className="text-sm text-rose-300">{sendError}</p> : null}
 
       <section className="space-y-2 rounded-xl border p-3">
+        <h3 className="font-medium">Закрытый контур (WireGuard)</h3>
+        <p className="text-xs text-muted-foreground">
+          {data.overlay?.note} Хаб: {data.overlay?.hubUrl}. С улицы только UDP {data.overlay?.listenPort} (
+          {data.overlay?.endpoint}). Чужих в туннель не пускаем.
+        </p>
+        <Button
+          size="sm"
+          variant={data.overlayOnly ? "outline" : "default"}
+          onClick={() =>
+            void cabinet({ action: "overlay-only", overlayOnly: !data.overlayOnly })
+              .then(() => onRefresh())
+              .catch((err: Error) => onError(err.message))
+          }
+        >
+          {data.overlayOnly ? "Выключить закрытый контур" : "Включить: рация только внутри overlay"}
+        </Button>
+        {data.overlayOnly ? (
+          <p className="text-[11px] text-muted-foreground">
+            На VPS: <code>HIVE_BIND=10.42.0.1 npm start</code> и <code>wg-quick up</code> из конфига на вкладке «Туннели».
+            Агент: <code>HIVE_HUB_URL=http://10.42.0.1:43147</code> + <code>HIVE_OVERLAY=1 ./agents/hive-join.sh</code>
+          </p>
+        ) : null}
+      </section>
+
+      <section className="space-y-2 rounded-xl border p-3">
         <h3 className="font-medium">MAG Master External MCP</h3>
         <p className="text-xs text-muted-foreground">
           {data.mag.connected

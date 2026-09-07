@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth";
 import { assertSameOrigin } from "@/lib/crypto-security";
 import { fail } from "@/lib/http";
+import { assertOverlayClient } from "@/lib/overlay";
 import { getStore } from "@/lib/store";
 import { startSwarmRuntime } from "@/lib/swarm-runtime";
 import type { Presence } from "@/lib/types";
@@ -24,6 +25,7 @@ export async function PATCH(request: Request) {
     if (key) {
       const agent = store.agentByKey(key);
       if (!agent) throw new Error("unauthorized");
+      assertOverlayClient(request, store.swarmById(agent.swarmId));
       memberId = agent.id;
     } else {
       const session = await getSession();

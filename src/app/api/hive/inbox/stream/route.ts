@@ -1,4 +1,5 @@
 import { fail } from "@/lib/http";
+import { assertOverlayClient } from "@/lib/overlay";
 import { getStore } from "@/lib/store";
 import { startSwarmRuntime } from "@/lib/swarm-runtime";
 import type { HiveEvent } from "@/lib/types";
@@ -14,6 +15,7 @@ export async function GET(request: Request) {
     if (!key) throw new Error("unauthorized");
     const agent = store.agentByKey(key);
     if (!agent) throw new Error("unauthorized");
+    assertOverlayClient(request, store.swarmById(agent.swarmId));
     store.heartbeat(agent.id);
 
     const encoder = new TextEncoder();
