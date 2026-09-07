@@ -2,12 +2,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Member, Message } from "@/lib/types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const KIND_LABEL: Record<Message["kind"], string> = {
   page: "Пейдж",
   task_assigned: "Поставил задачу · жду",
-  progress: "В работе",
+  progress: "Думает",
   blocked: "Проблема",
   done: "Закрыл · свободен",
   free: "Свободен",
@@ -23,14 +23,42 @@ const LANE_LABEL: Record<Message["lane"], string> = {
   full: "полный",
 };
 
+function formatBusy(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h) return `${h}ч ${m}м ${s}с`;
+  if (m) return `${m}м ${s}с`;
+  return `${s}с`;
+}
+
+function WorkClock({ startedAt, elapsedMs }: { startedAt: number; elapsedMs?: number }) {
+  const frozen = typeof elapsedMs === "number";
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (frozen) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [frozen]);
+  const ms = frozen ? elapsedMs : Math.max(0, now - startedAt);
+  return (
+    <Badge variant="secondary" className="font-mono tabular-nums">
+      {frozen ? `занятость ${formatBusy(ms)}` : `занят ${formatBusy(ms)}`}
+    </Badge>
+  );
+}
+
 export function MessageCard({
   message,
   from,
   to,
+  toYou,
 }: {
   message: Message;
   from?: Member;
   to?: { handle: string };
+  toYou?: boolean;
 }) {
   const [opened, setOpened] = useState<{ login: string; password: string } | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
@@ -75,11 +103,24 @@ export function MessageCard({
         <span className={from?.kind === "agent" ? "font-medium text-amber-200" : "font-medium text-teal-200"}>
           @{from?.handle ?? "?"}
         </span>
-        {to ? <span className="text-muted-foreground">→ @{to.handle}</span> : null}
-        <Badge variant="outline">{KIND_LABEL[message.kind]}</Badge>
+        {to ? (
+          <span className="text-muted-foreground">
+            → {toYou ? `вам (@${to.handle})` : `@${to.handle}`}
+          </span>
+        ) : null}
+        <Badge variant="outline">
+          {message.kind === "progress" && message.workStartedAt
+            ? message.workElapsedMs != null
+              ? "Занятость"
+              : "В работе"
+            : KIND_LABEL[message.kind]}
+        </Badge>
         <Badge variant="secondary">{LANE_LABEL[message.lane ?? "pager"]}</Badge>
         {message.scope === "federation" ? <Badge variant="secondary">эфир · только пейджер</Badge> : null}
         {message.taskRef ? <Badge variant="secondary">MAG #{message.taskRef.magTaskId}</Badge> : null}
+        {message.workStartedAt ? (
+          <WorkClock startedAt={message.workStartedAt} elapsedMs={message.workElapsedMs} />
+        ) : null}
         <span className="ml-auto text-muted-foreground">
           {time} · до {new Date(message.expiresAt).toLocaleString("ru-RU", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
         </span>

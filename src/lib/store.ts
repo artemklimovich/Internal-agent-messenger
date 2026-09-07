@@ -15,7 +15,7 @@ import {
 } from "./crypto-security";
 import { nid } from "./id";
 import { readAttachment, saveAttachment, swarmCryptoKey } from "./blobs";
-import { createEmptyWorld, handleFromEmail, provisionOwnedSwarm } from "./seed";
+import { createEmptyWorld, demoOwnedAgents, demoOwnedTunnels, handleFromEmail, provisionOwnedSwarm } from "./seed";
 import { hubSshHost, nextOverlayIp, nextReversePort, reverseWakeUrl } from "./tunnels";
 import {
   agentWireguardConf,
@@ -25,6 +25,7 @@ import {
   overlayEndpoint,
   overlayHubUrl,
 } from "./overlay";
+import { adoptLiveTunnels, overlayHubIp, readLiveWireguard, wgInstallHint } from "./live-wg";
 import type {
   AgentKey,
   Attachment,
@@ -70,6 +71,15 @@ class HiveStore extends EventEmitter {
     super();
     this.setMaxListeners(200);
     this.world = this.load();
+    this.syncLiveTunnels();
+  }
+
+  syncLiveTunnels() {
+    const { changed } = adoptLiveTunnels({
+      members: this.world.members,
+      tunnels: this.world.tunnels,
+    });
+    if (changed) this.persist();
   }
 
   private load(): World {
@@ -80,6 +90,7 @@ class HiveStore extends EventEmitter {
       }
       parsed.secrets ??= [];
       parsed.peerHubs ??= [];
+      parsed.demoMode ??= true;
       parsed.messages = parsed.messages.map((message) => ({
         ...message,
         lane: message.lane ?? "pager",
@@ -135,6 +146,9 @@ class HiveStore extends EventEmitter {
       throw new Error("Такой email уже есть");
     }
     const humans = this.world.users.filter((user) => user.role !== "system").length;
+    if (humans > 0 && process.env.HIVE_ALLOW_REGISTER !== "1") {
+      throw new Error("Регистрация на этом хабе закрыта. Войдите существующим аккаунтом.");
+    }
     const user: User = {
       id: nid("user-"),
       email,
@@ -188,21 +202,85 @@ class HiveStore extends EventEmitter {
     };
   }
 
+  isDemoMode() {
+    return this.world.demoMode !== false;
+  }
+
+  disableDemo(userId: string) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    const fakeIds = new Set(
+      this.world.members.filter((member) => member.simulated).map((member) => member.id),
+    );
+    this.world.demoMode = false;
+    this.world.members = this.world.members.filter((member) => !member.simulated);
+    this.world.tunnels = this.world.tunnels.filter((tunnel) => !fakeIds.has(tunnel.agentId));
+    this.world.agentKeys = this.world.agentKeys.filter((key) => !fakeIds.has(key.agentId));
+    this.world.messages = this.world.messages.filter(
+      (message) => !fakeIds.has(message.fromId) && !(message.toId && fakeIds.has(message.toId)),
+    );
+    this.world.swarms = this.world.swarms.filter(
+      (item) => item.id !== "swarm-north" || this.world.members.some((member) => member.swarmId === item.id),
+    );
+    this.emitState(swarm.id);
+    return { ok: true as const, demoMode: false as const };
+  }
+
+  enableDemo(userId: string) {
+    const swarm = this.swarmByOwner(userId);
+    if (!swarm) throw new Error("unauthorized");
+    const t = Date.now();
+    this.world.demoMode = true;
+    if (!this.world.users.some((user) => user.id === "user-system")) {
+      const empty = createEmptyWorld();
+      this.world.users.push(...empty.users.filter((user) => !this.world.users.some((row) => row.id === user.id)));
+    }
+    if (!this.world.swarms.some((item) => item.id === "swarm-north")) {
+      const empty = createEmptyWorld();
+      this.world.swarms.push(...empty.swarms);
+      this.world.members.push(
+        ...empty.members.filter((member) => !this.world.members.some((row) => row.id === member.id)),
+      );
+    }
+    const agents = demoOwnedAgents(swarm.id, t);
+    for (const agent of agents) {
+      if (!this.world.members.some((member) => member.id === agent.id || member.handle === agent.handle)) {
+        this.world.members.push(agent);
+      }
+    }
+    const present = agents.filter((agent) => this.world.members.some((member) => member.id === agent.id));
+    for (const tunnel of demoOwnedTunnels(swarm.id, present, t)) {
+      if (!this.world.tunnels.some((item) => item.id === tunnel.id)) this.world.tunnels.push(tunnel);
+    }
+    this.emitState(swarm.id);
+    return { ok: true as const, demoMode: true as const };
+  }
+
   viewer(userId: string) {
     this.purgeExpired();
     const user = this.userById(userId);
     const swarm = this.swarmByOwner(userId);
     if (!user || !swarm) throw new Error("unauthorized");
-    const members = this.world.members.filter((member) => member.swarmId === swarm.id);
+    const demo = this.isDemoMode();
+    const members = this.world.members.filter(
+      (member) => member.swarmId === swarm.id && (demo || !member.simulated),
+    );
     const rooms = this.world.rooms.filter((room) => room.swarmId === swarm.id);
+    const memberIds = new Set(members.map((member) => member.id));
     const messages = this.world.messages.filter(
       (message) =>
         message.expiresAt > Date.now() &&
         (message.swarmId === swarm.id ||
           (message.scope === "federation" &&
-            (message.fromSwarmId === swarm.id || message.toSwarmId === swarm.id))),
+            (message.fromSwarmId === swarm.id || message.toSwarmId === swarm.id))) &&
+        (demo ||
+          memberIds.has(message.fromId) ||
+          (message.toId ? memberIds.has(message.toId) : false) ||
+          message.fromId === user.id),
     );
-    const tunnels = this.world.tunnels.filter((tunnel) => tunnel.swarmId === swarm.id);
+    const tunnels = this.world.tunnels.filter(
+      (tunnel) => tunnel.swarmId === swarm.id && (demo || memberIds.has(tunnel.agentId)),
+    );
     for (const peer of this.world.peerHubs.filter((item) => item.ownerSwarmId === swarm.id)) {
       if (!peer.lastOkAt || Date.now() - (peer.lastOkAt ?? 0) > 45_000) void this.refreshPeer(peer.id);
     }
@@ -237,17 +315,31 @@ class HiveStore extends EventEmitter {
         gatewayUrl: swarm.magConnect?.gatewayUrl,
         docs: "https://magaicrm.ru/help/docs/mcp/external-agents",
       },
+      demoMode: demo,
       overlayOnly: resolvePolicy(swarm).overlayOnly,
       policy: resolvePolicy(swarm),
       overlay: {
-        hubIp: "10.42.0.1",
+        hubIp: overlayHubIp(),
         hubUrl: overlayHubUrl(),
-        net: "10.42.0.0/24",
-        listenPort: 51820,
+        net: readLiveWireguard()?.net || "10.42.0.0/24",
+        listenPort: readLiveWireguard()?.listenPort || 51820,
         endpoint: overlayEndpoint(),
-        note: resolvePolicy(swarm).overlayOnly
-          ? "HTTP своего роя на overlay. UDP 51820 — вход с NAT. Входящий эфир — отдельный переключатель."
-          : "Можно включить закрытый контур: рация своего роя поедет внутри WireGuard. Это настройка, не закон протокола.",
+        iface: readLiveWireguard()?.iface,
+        adopted: Boolean(readLiveWireguard()),
+        peers: (readLiveWireguard()?.peers ?? []).map((peer) => ({
+          ip: peer.ip,
+          status: peer.status,
+          handle: this.world.tunnels.find((tunnel) => tunnel.overlayIp === peer.ip)
+            ? this.world.members.find(
+                (member) => member.id === this.world.tunnels.find((tunnel) => tunnel.overlayIp === peer.ip)?.agentId,
+              )?.handle
+            : undefined,
+        })),
+        note: readLiveWireguard()
+          ? `${wgInstallHint()} Карта с ${readLiveWireguard()?.iface} ${readLiveWireguard()?.net}. Hop через 2–3 машины — если на хабе forwarding и AllowedIPs знают адрес.`
+          : resolvePolicy(swarm).overlayOnly
+            ? "HTTP своего роя на overlay. UDP 51820 — вход с NAT. Входящий эфир — отдельный переключатель."
+            : "Можно включить закрытый контур: рация своего роя поедет внутри WireGuard. Это настройка, не закон протокола.",
       },
       publicUrl: swarm.publicUrl ?? process.env.HIVE_PUBLIC_URL ?? "",
       peerInviteSet: Boolean(swarm.peerInviteHash),
@@ -263,6 +355,8 @@ class HiveStore extends EventEmitter {
         swarmMax: resolvePolicy(swarm).swarmPageMax,
         etherMax: resolvePolicy(swarm).etherMax,
       },
+      haltUntil: swarm.haltUntil && swarm.haltUntil > Date.now() ? swarm.haltUntil : 0,
+      talkMode: swarm.talkMode === "qaq" ? "qaq" : "qa",
     };
   }
 
@@ -278,7 +372,8 @@ class HiveStore extends EventEmitter {
         (member) =>
           member.kind === "agent" &&
           member.discoverable &&
-          member.swarmId !== mySwarmId,
+          member.swarmId !== mySwarmId &&
+          (this.isDemoMode() || !member.simulated),
       )
       .map((member) => {
         const swarm = this.world.swarms.find((item) => item.id === member.swarmId);
@@ -381,11 +476,18 @@ class HiveStore extends EventEmitter {
       kind,
       lane,
       body: body || (secretId ? "Запечатанный конверт" : attachments[0]?.name ?? ""),
-      taskRef: scope === "swarm" && lane === "pager" ? input.taskRef ?? parseTaskRef(body) : input.taskRef,
+      taskRef:
+        scope === "swarm"
+          ? input.taskRef ??
+            ((lane === "pager" || input.kind === "task_assigned" || /MAG\s*#\d+/i.test(body))
+              ? parseTaskRef(body)
+              : undefined)
+          : input.taskRef,
       attachments: attachments.length ? attachments : undefined,
       secretId,
       createdAt: Date.now(),
       expiresAt: Date.now() + ttl,
+      workStartedAt: input.workTimer ? Date.now() : undefined,
     };
     this.world.messages.push(message);
     this.trimLane(from.swarmId, lane);
@@ -400,6 +502,29 @@ class HiveStore extends EventEmitter {
     this.persist();
     this.wakeAgent(message);
     return message;
+  }
+
+  patchOwnMessage(
+    memberId: string,
+    messageId: string,
+    patch: { body?: string; workElapsedMs?: number },
+  ) {
+    const from = this.memberById(memberId);
+    const message = this.world.messages.find((item) => item.id === messageId);
+    if (!from || !message) throw new Error("unknown message");
+    if (message.fromId !== memberId) throw new Error("forbidden");
+    if (typeof patch.body === "string") message.body = patch.body.slice(0, 8000);
+    if (typeof patch.workElapsedMs === "number" && Number.isFinite(patch.workElapsedMs)) {
+      message.workElapsedMs = Math.max(0, Math.floor(patch.workElapsedMs));
+    }
+    this.emit("event", {
+      type: "message",
+      at: Date.now(),
+      message: { ...message },
+      swarmId: from.swarmId,
+    } satisfies HiveEvent);
+    this.persist();
+    return clone(message);
   }
 
   async sendAsUser(
@@ -428,7 +553,22 @@ class HiveStore extends EventEmitter {
       if (!rateLimit(`send:${userId}:ether`, 8, 60_000)) throw new Error("Слишком часто.");
       return this.sendToPeerHub(from.id, input.toId, input.body);
     }
-    const to = input.toId ? this.memberById(input.toId) : undefined;
+    const mentioned = [...String(input.body ?? "").matchAll(/@([a-zA-Z0-9_-]+)/g)].map((item) => item[1]);
+    let to = input.toId ? this.memberById(input.toId) : undefined;
+    if (!to && mentioned.length) {
+      to = this.world.members.find(
+        (member) =>
+          member.swarmId === swarm.id &&
+          member.kind === "agent" &&
+          !member.simulated &&
+          mentioned.includes(member.handle),
+      );
+    }
+    if (to?.simulated && mentioned.includes("office")) {
+      to = this.world.members.find(
+        (member) => member.swarmId === swarm.id && member.handle === "office" && !member.simulated,
+      ) ?? to;
+    }
     const scope = input.scope ?? (to && to.swarmId !== swarm.id ? "federation" : "swarm");
     const policy = resolvePolicy(swarm);
     const lane =
@@ -449,7 +589,7 @@ class HiveStore extends EventEmitter {
       roomId,
       swarmId: swarm.id,
       fromId: from.id,
-      toId: input.toId,
+      toId: to?.id,
       kind: input.kind,
       lane,
       body: input.body,
@@ -492,6 +632,7 @@ class HiveStore extends EventEmitter {
   }
 
   playFullScene(userId: string) {
+    if (!this.isDemoMode()) throw new Error("Демо выключено. Заведите живых агентов в кабинете.");
     const swarm = this.swarmByOwner(userId);
     const linux = this.world.members.find(
       (member) => member.swarmId === swarm?.id && member.handle === "linux",
@@ -550,6 +691,7 @@ class HiveStore extends EventEmitter {
   }
 
   playScene(userId: string) {
+    if (!this.isDemoMode()) throw new Error("Демо выключено. Заведите живых агентов в кабинете.");
     const swarm = this.swarmByOwner(userId);
     if (!swarm) throw new Error("unauthorized");
     const orchestrator = this.world.members.find(
@@ -593,6 +735,109 @@ class HiveStore extends EventEmitter {
     } satisfies HiveEvent);
     this.persist();
     return clone(member);
+  }
+
+  expireStaleWork() {
+    const now = Date.now();
+    let changed = false;
+    let swarmId: string | undefined;
+    for (const message of this.world.messages) {
+      if (message.kind !== "progress") continue;
+      if (!message.workStartedAt || typeof message.workElapsedMs === "number") continue;
+      const body = message.body || "";
+      const limit = /работаю сам|читаю отчёт/.test(body) ? 480_000 : 120_000;
+      if (now - message.workStartedAt < limit) continue;
+      const elapsed = now - message.workStartedAt;
+      message.workElapsedMs = elapsed;
+      if (!/срыв:/.test(body)) {
+        message.body = `${body.replace(/…$/, "")} — срыв: нода не вернула ответ (${Math.round(elapsed / 1000)}с).`.slice(0, 280);
+      }
+      const from = this.memberById(message.fromId);
+      if (from?.kind === "agent" && from.presence === "busy") {
+        from.presence = "free";
+        from.currentTaskId = undefined;
+      }
+      swarmId = message.swarmId;
+      changed = true;
+    }
+    if (changed) {
+      this.persist();
+      this.emit("event", { type: "state", at: now, swarmId });
+    }
+  }
+
+  haltModels(swarmId: string, ms = 30 * 60 * 1000) {
+    const swarm = this.swarmById(swarmId);
+    if (!swarm) throw new Error("unknown swarm");
+    swarm.haltUntil = Date.now() + ms;
+    for (const member of this.world.members.filter((item) => item.swarmId === swarmId && item.kind === "agent")) {
+      member.presence = "free";
+      member.currentTaskId = undefined;
+    }
+    this.emit("event", {
+      type: "halt",
+      at: Date.now(),
+      swarmId,
+      haltUntil: swarm.haltUntil,
+    } satisfies HiveEvent);
+    this.persist();
+    const payload = JSON.stringify({ type: "halt", haltUntil: swarm.haltUntil, at: Date.now() });
+    const extra = ["http://127.0.0.1:18791/hive/wake"];
+    for (const member of this.world.members.filter((item) => item.swarmId === swarmId && item.kind === "agent")) {
+      const tunnel = this.world.tunnels.find((item) => item.agentId === member.id);
+      extra.push(...([member.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null].filter(Boolean) as string[]));
+    }
+    for (const url of [...new Set(extra)]) {
+      void fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hive-Event": "halt" },
+        body: payload,
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => undefined);
+    }
+    return { haltUntil: swarm.haltUntil };
+  }
+
+  resumeModels(swarmId: string) {
+    const swarm = this.swarmById(swarmId);
+    if (!swarm) throw new Error("unknown swarm");
+    swarm.haltUntil = 0;
+    this.emit("event", { type: "halt", at: Date.now(), swarmId, haltUntil: 0 } satisfies HiveEvent);
+    this.persist();
+    return { haltUntil: 0 };
+  }
+
+  isHalted(swarmId: string) {
+    const swarm = this.swarmById(swarmId);
+    return Boolean(swarm?.haltUntil && swarm.haltUntil > Date.now());
+  }
+
+  setTalkMode(swarmId: string, mode: "qa" | "qaq") {
+    const swarm = this.swarmById(swarmId);
+    if (!swarm) throw new Error("unknown swarm");
+    swarm.talkMode = mode === "qaq" ? "qaq" : "qa";
+    this.emit("event", {
+      type: "talk",
+      at: Date.now(),
+      swarmId,
+      talkMode: swarm.talkMode,
+    } satisfies HiveEvent);
+    this.persist();
+    const payload = JSON.stringify({ type: "talk", talkMode: swarm.talkMode, at: Date.now() });
+    const extra = ["http://127.0.0.1:18791/hive/wake"];
+    for (const member of this.world.members.filter((item) => item.swarmId === swarmId && item.kind === "agent")) {
+      const tunnel = this.world.tunnels.find((item) => item.agentId === member.id);
+      extra.push(...([member.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null].filter(Boolean) as string[]));
+    }
+    for (const url of [...new Set(extra)]) {
+      void fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hive-Event": "talk" },
+        body: payload,
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => undefined);
+    }
+    return { talkMode: swarm.talkMode };
   }
 
   heartbeat(memberId: string) {
@@ -807,19 +1052,27 @@ class HiveStore extends EventEmitter {
   overlayBundle(swarmId: string) {
     const swarm = this.world.swarms.find((item) => item.id === swarmId);
     if (!swarm) throw new Error("unknown swarm");
+    this.syncLiveTunnels();
     const tunnels = this.world.tunnels.filter((tunnel) => tunnel.swarmId === swarmId);
+    const live = readLiveWireguard();
     return {
       overlayOnly: resolvePolicy(swarm).overlayOnly,
-      hubIp: HUB_OVERLAY_IP,
+      hubIp: overlayHubIp(),
       hubUrl: overlayHubUrl(),
       endpoint: overlayEndpoint(),
-      listenPort: 51820,
-      hubConf: hubWireguardConf(swarmId, tunnels),
-      agents: tunnels.map((tunnel) => ({
-        agentId: tunnel.agentId,
-        overlayIp: tunnel.overlayIp,
-        conf: agentWireguardConf(swarmId, tunnel),
-      })),
+      listenPort: live?.listenPort || 51820,
+      adopted: Boolean(live),
+      iface: live?.iface,
+      net: live?.net,
+      hint: wgInstallHint(),
+      hubConf: live ? "" : hubWireguardConf(swarmId, tunnels),
+      agents: live
+        ? []
+        : tunnels.map((tunnel) => ({
+            agentId: tunnel.agentId,
+            overlayIp: tunnel.overlayIp,
+            conf: agentWireguardConf(swarmId, tunnel),
+          })),
     };
   }
 
@@ -1055,9 +1308,14 @@ class HiveStore extends EventEmitter {
     const swarm = this.world.swarms.find((item) => item.id === message.swarmId);
     for (const target of targets) {
       const tunnel = this.world.tunnels.find((item) => item.agentId === target.id);
+      const hubIp = overlayHubIp();
       const overlayWake =
-        swarm && resolvePolicy(swarm).overlayWake && resolvePolicy(swarm).overlayOnly && tunnel
-          ? `http://${tunnel.overlayIp}:18790/hive/wake`
+        swarm &&
+        resolvePolicy(swarm).overlayWake &&
+        tunnel &&
+        tunnel.status !== "down" &&
+        tunnel.overlayIp !== hubIp
+          ? `http://${tunnel.overlayIp}:${tunnel.ssh?.wakePort ?? 18790}/hive/wake`
           : null;
       const urls = [...new Set([target.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null, overlayWake].filter(Boolean))] as string[];
       for (const url of urls) {
@@ -1152,7 +1410,17 @@ class HiveStore extends EventEmitter {
 
   private applyPresence(message: Message, from: Member) {
     if (from.kind !== "agent" || message.scope !== "swarm") return;
-    if (message.kind === "progress" || message.kind === "task_assigned") {
+    if (message.kind === "task_assigned") {
+      from.presence = "free";
+      from.currentTaskId = undefined;
+      const to = message.toId ? this.memberById(message.toId) : undefined;
+      if (to && to.kind === "agent") {
+        to.presence = "busy";
+        to.currentTaskId = message.taskRef?.magTaskId ?? to.currentTaskId;
+      }
+      return;
+    }
+    if (message.kind === "progress") {
       from.presence = "busy";
       from.currentTaskId = message.taskRef?.magTaskId ?? from.currentTaskId;
     }

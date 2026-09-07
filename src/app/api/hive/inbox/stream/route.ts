@@ -26,6 +26,14 @@ export async function GET(request: Request) {
             enqueue(event);
             return;
           }
+          if (event.type === "halt" && event.swarmId === agent.swarmId) {
+            enqueue(event);
+            return;
+          }
+          if (event.type === "talk" && event.swarmId === agent.swarmId) {
+            enqueue(event);
+            return;
+          }
           if (event.type !== "message" || !event.message) return;
           const inbox = store.inbox(agent.id, event.message.createdAt - 1);
           if (!inbox.some((item) => item.id === event.message?.id)) return;
@@ -44,7 +52,13 @@ export async function GET(request: Request) {
           store.off("event", send);
         };
         store.on("event", send);
-        enqueue({ type: "hello", at: Date.now(), swarmId: agent.swarmId });
+        enqueue({
+          type: "hello",
+          at: Date.now(),
+          swarmId: agent.swarmId,
+          haltUntil: store.swarmById(agent.swarmId)?.haltUntil,
+          talkMode: store.swarmById(agent.swarmId)?.talkMode === "qaq" ? "qaq" : "qa",
+        });
         request.signal.addEventListener("abort", () => {
           cleanup();
           try {

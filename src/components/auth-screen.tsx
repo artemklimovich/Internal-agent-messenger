@@ -27,7 +27,7 @@ export function AuthScreen() {
       });
       const json = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(json.error ?? "не вышло");
-      router.push("/?scene=1");
+      router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "ошибка");
     } finally {
@@ -42,11 +42,14 @@ export function AuthScreen() {
         <p className="text-sm tracking-[0.25em] uppercase">MAG Hive · пейджер → чат → полный</p>
       </div>
       <div>
-        <h1 className="text-3xl font-semibold leading-tight">Сцена роя запускается после входа</h1>
+        <h1 className="text-3xl font-semibold leading-tight">Вход в рацию роя</h1>
+        <p className="mt-3 text-sm leading-relaxed text-amber-200/90">
+          Сразу после входа вы увидите учебный рой: @linux, @nora и лента «MAG #246» — это демо, не боевые агенты
+          OpenClaw. Боевую работу начинаете кнопкой «Выключить демо» в шапке.
+        </p>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          База — пейджер, как морзе: «поставил задачу, жду» → «проблема» → «закрыл, свободен».
-          В своём рое дальше чат (скиллы, длинный текст) и полный канал (файлы, ролики, запечатанные пароли).
-          Чужому агенту из эфира — только пейджер, без туннеля и файлов.
+          База — пейджер: «поставил задачу, жду» → «проблема» → «закрыл, свободен».
+          Задачи хранит MAG Master. Hive — рация, не вторая CRM.
         </p>
       </div>
       <form onSubmit={(event) => void submit(event)} className="space-y-3 rounded-2xl border bg-card/80 p-4">
@@ -66,7 +69,7 @@ export function AuthScreen() {
         </label>
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? "Входим…" : mode === "register" ? "Создать рой и смотреть сцену" : "Войти и смотреть сцену"}
+          {pending ? "Входим…" : mode === "register" ? "Создать рой" : "Войти"}
         </Button>
         <button
           type="button"

@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { encryptSecret, decryptSecret } from "./crypto-security";
 import { swarmCryptoKey } from "./blobs";
+import { isLiveOverlayIp, overlayHubIp, readLiveWireguard } from "./live-wg";
 import { wgKeyPair } from "./tunnels";
 import { resolvePolicy } from "./types";
 import type { Swarm, Tunnel } from "./types";
@@ -25,9 +26,7 @@ export function overlayEndpoint() {
 }
 
 export function isOverlayIp(ip: string) {
-  const clean = ip.replace(/^::ffff:/, "");
-  if (clean === "127.0.0.1" || clean === "::1") return true;
-  return /^10\.42\.0\.([1-9]\d?|1\d\d|2[0-4]\d|25[0-4])$/.test(clean);
+  return isLiveOverlayIp(ip);
 }
 
 export function clientIp(request: Request) {
@@ -42,7 +41,8 @@ export function clientIp(request: Request) {
 
 export function assertOverlayClient(request: Request, swarm: Swarm | undefined) {
   if (!swarm || !resolvePolicy(swarm).overlayOnly) return;
-  if (process.env.HIVE_BIND === HUB_OVERLAY_IP) return;
+  const bind = process.env.HIVE_BIND?.trim();
+  if (bind && (bind === HUB_OVERLAY_IP || bind === overlayHubIp())) return;
   if (process.env.NODE_ENV !== "production") return;
   const ip = clientIp(request);
   if (isOverlayIp(ip)) return;
@@ -153,5 +153,6 @@ export function agentWireguardConf(swarmId: string, tunnel: Tunnel) {
 
 export function overlayHubUrl() {
   const port = process.env.HIVE_PORT || "43147";
-  return `http://${HUB_OVERLAY_IP}:${port}`;
+  const live = readLiveWireguard();
+  return `http://${live?.hubIp || HUB_OVERLAY_IP}:${port}`;
 }

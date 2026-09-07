@@ -98,6 +98,10 @@ export async function POST(request: Request) {
         return Response.json(store.setOverlayOnly(session.id, Boolean(body.overlayOnly)));
       case "policy":
         return Response.json(store.setPolicy(session.id, (body.policy ?? {}) as Partial<SwarmPolicy>));
+      case "disable-demo":
+        return Response.json(store.disableDemo(session.id));
+      case "enable-demo":
+        return Response.json(store.enableDemo(session.id));
       default:
         throw new Error("unknown action");
     }

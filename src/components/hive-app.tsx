@@ -16,10 +16,12 @@ import {
   Lock,
   MessageSquare,
   Network,
+  Octagon,
   Paperclip,
   Radio,
   Send,
   Shield,
+  X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -28,7 +30,7 @@ type View = "pager" | "ether" | "tunnels" | "cabinet";
 
 const PRESENCE: Record<Presence, string> = {
   free: "свободен",
-  busy: "в работе",
+  busy: "думает",
   blocked: "проблема",
   offline: "офлайн",
 };
@@ -61,7 +63,11 @@ export function HiveApp() {
   const [secretPassword, setSecretPassword] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [halting, setHalting] = useState(false);
+  const [talkBusy, setTalkBusy] = useState(false);
+  const [disablingDemo, setDisablingDemo] = useState(false);
   const [sceneOpen, setSceneOpen] = useState(false);
+  const [sceneDismissed, setSceneDismissed] = useState(false);
   const [sceneKind, setSceneKind] = useState<"pager" | "full">("pager");
   const [sceneStep, setSceneStep] = useState(0);
   const [issuedKey, setIssuedKey] = useState<{ handle: string; key: string } | null>(null);
@@ -72,8 +78,15 @@ export function HiveApp() {
   const sceneOnce = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const autoScene = search.get("scene") === "1";
+  const demoMode = data?.demoMode !== false;
+  const autoScene = demoMode && search.get("scene") === "1" && !sceneDismissed;
   const showScene = autoScene || sceneOpen;
+
+  function closeScene() {
+    setSceneOpen(false);
+    setSceneDismissed(true);
+    if (search.get("scene")) router.replace("/");
+  }
   const steps = sceneKind === "full" ? FULL_STEPS : PAGER_STEPS;
 
   const pagerMessages = useMemo(() => {
@@ -109,19 +122,28 @@ export function HiveApp() {
   }, [pagerMessages.length, view]);
 
   useEffect(() => {
+    if (!showScene) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeScene();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showScene]);
+
+  useEffect(() => {
     if (!data || sceneOnce.current) return;
     if (!autoScene) return;
     sceneOnce.current = true;
     void fetch("/api/hive/demo", { method: "POST" }).then(() => refresh());
     const t1 = setTimeout(() => setSceneStep(1), 900);
     const t2 = setTimeout(() => setSceneStep(2), 2800);
-    const t3 = setTimeout(() => router.replace("/"), 7000);
+    const t3 = setTimeout(() => closeScene(), 7000);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
     };
-  }, [data, autoScene, router, refresh]);
+  }, [data, autoScene, refresh]);
 
   async function runScene(which: "pager" | "full") {
     setView("pager");
@@ -151,7 +173,7 @@ export function HiveApp() {
       await send({
         body: draft.trim(),
         toId: scope === "federation" ? etherTo?.id : toId,
-        kind: scope === "federation" ? "page" : lane === "chat" ? "chat" : lane === "full" ? (secret ? "secret" : "artifact") : kind,
+        kind: scope === "federation" ? "page" : lane === "full" ? (secret ? "secret" : "artifact") : kind,
         scope,
         lane: scope === "federation" ? "pager" : lane,
         file: scope === "swarm" && lane === "full" ? file ?? undefined : undefined,
@@ -166,6 +188,25 @@ export function HiveApp() {
       setSendError(err instanceof Error ? err.message : "не отправилось");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function haltModels(resume = false) {
+    setHalting(true);
+    setSendError(null);
+    try {
+      const response = await fetch("/api/hive/halt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: resume ? "resume" : "stop" }),
+      });
+      const json = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(json.error || "не остановилось");
+      await refresh();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "стоп не сработал");
+    } finally {
+      setHalting(false);
     }
   }
 
@@ -198,6 +239,67 @@ export function HiveApp() {
     if (response.ok) setAdmin((await response.json()) as typeof admin);
   }
 
+  async function setTalkMode(mode: "qa" | "qaq") {
+    setTalkBusy(true);
+    setSendError(null);
+    try {
+      const response = await fetch("/api/hive/talk-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const json = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(json.error || "режим не сменился");
+      await refresh();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "режим не сменился");
+    } finally {
+      setTalkBusy(false);
+    }
+  }
+
+  async function enableDemo() {
+    setDisablingDemo(true);
+    setSendError(null);
+    try {
+      const response = await fetch("/api/hive/cabinet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "enable-demo" }),
+      });
+      const json = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(json.error ?? "демо не включилось");
+      await refresh();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "демо не включилось");
+    } finally {
+      setDisablingDemo(false);
+    }
+  }
+
+  async function disableDemo() {
+    if (!confirm("Убрать учебных @linux / @nora и демо-ленту? Останется пустой рой — агентов заводите в кабинете.")) {
+      return;
+    }
+    setDisablingDemo(true);
+    setSendError(null);
+    try {
+      const response = await fetch("/api/hive/cabinet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disable-demo" }),
+      });
+      const json = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(json.error ?? "не выключилось");
+      closeScene();
+      await refresh();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "не выключилось");
+    } finally {
+      setDisablingDemo(false);
+    }
+  }
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
@@ -217,17 +319,36 @@ export function HiveApp() {
   if (!data) return null;
 
   const linux = data.members.find((member) => member.handle === "linux");
+  const office = data.members.find((member) => member.handle === "office" && !member.simulated);
   const meHandle = data.members.find((member) => member.id === data.me.id)?.handle;
+  const taskTarget =
+    (toId && data.members.find((member) => member.id === toId && member.kind === "agent" && !member.simulated)) ||
+    office ||
+    linux;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {showScene ? (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-amber-300/40 bg-card p-5 shadow-xl">
-            <p className="text-xs tracking-[0.2em] text-amber-200 uppercase">
-              {sceneKind === "full" ? "Сцена полной связи" : "Сцена пейджера"}
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold">
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="hive-scene-title"
+          onClick={closeScene}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-amber-300/40 bg-card p-5 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs tracking-[0.2em] text-amber-200 uppercase">
+                {sceneKind === "full" ? "Сцена полной связи" : "Сцена пейджера"}
+              </p>
+              <Button type="button" variant="ghost" size="icon" aria-label="Закрыть сцену" onClick={closeScene}>
+                <X className="size-4" />
+              </Button>
+            </div>
+            <h2 id="hive-scene-title" className="mt-2 text-2xl font-semibold">
               {sceneKind === "full" ? "Свой рой: чат, файл, конверт" : "Агент ставит задачу агенту"}
             </h2>
             <ol className="mt-4 space-y-2 text-sm">
@@ -238,8 +359,11 @@ export function HiveApp() {
               ))}
             </ol>
             <p className="mt-4 text-xs text-muted-foreground">
-              Чужому агенту из этих трёх слоёв доступен только пейджер.
+              Онбординг: демо, как агент будит агента. Не боевая задача. Чужому из эфира — только пейджер.
             </p>
+            <Button className="mt-4 w-full" variant="outline" onClick={closeScene}>
+              Понятно, закрыть
+            </Button>
           </div>
         </div>
       ) : null}
@@ -251,6 +375,33 @@ export function HiveApp() {
           <p className="text-xs text-muted-foreground">{data.swarm.name} · вы {data.me.name}</p>
         </div>
         <Badge variant="outline">пейджер → чат → полный</Badge>
+        {demoMode ? (
+          <Badge variant="destructive">учебный режим</Badge>
+        ) : (
+          <Badge variant="secondary">боевой рой</Badge>
+        )}
+        {demoMode ? (
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={disablingDemo}
+            onClick={() => void disableDemo()}
+          >
+            {disablingDemo ? "Выключаю…" : "Выключить демо"}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disablingDemo}
+            title="Вернуть учебных @linux / @nora. Живые @main / @office не трогает."
+            onClick={() => void enableDemo()}
+          >
+            {disablingDemo ? "Включаю…" : "Включить демо"}
+          </Button>
+        )}
         <nav className="ml-auto hidden flex-wrap gap-1 md:flex">
           <NavBtn active={view === "pager"} onClick={() => setView("pager")} icon={MessageSquare}>
             Рой
@@ -274,15 +425,38 @@ export function HiveApp() {
         </nav>
       </header>
 
+      {demoMode ? (
+        <div className="border-b border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm">
+          <p className="font-medium text-amber-100">Это демо, не боевые агенты.</p>
+          <p className="mt-1 text-muted-foreground">
+            @orchestrator, @linux, @windows, @android, @nora, @mason и пейджи вроде MAG #246 — учебная сцена.
+            OpenClaw и офисный ПК сюда ещё не подключены. Чтобы начать работу: «Выключить демо», затем в кабинете
+            заведите живых @office / @main.
+          </p>
+        </div>
+      ) : (
+        <div className="border-b px-4 py-2 text-xs text-muted-foreground">
+          Учебный рой выключен. Агентов добавляйте в кабинете. Задачи — в MAG Master.
+        </div>
+      )}
+
       {view === "pager" ? (
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <aside className="w-full shrink-0 border-b p-3 md:w-72 md:border-r md:border-b-0">
-            <Button className="mb-2 h-12 w-full text-base" onClick={() => void runScene("pager")}>
-              Смотреть сцену роя
-            </Button>
-            <Button className="mb-3 h-10 w-full" variant="outline" onClick={() => void runScene("full")}>
-              Сцена чата и файлов
-            </Button>
+            {demoMode ? (
+              <>
+                <Button className="mb-2 h-12 w-full text-base" onClick={() => void runScene("pager")}>
+                  Смотреть учебную сцену
+                </Button>
+                <Button className="mb-3 h-10 w-full" variant="outline" onClick={() => void runScene("full")}>
+                  Сцена чата и файлов
+                </Button>
+              </>
+            ) : (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Пустой рой. Кабинет → создать агента (handle, ключ hive_).
+              </p>
+            )}
             <p className="text-[11px] tracking-wider text-muted-foreground uppercase">Свои агенты</p>
             {data.members
               .filter((member) => member.kind === "agent")
@@ -305,10 +479,60 @@ export function HiveApp() {
           </aside>
           <section className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="border-b px-4 py-2 text-sm">
-              <p className="font-medium">Свой рой: три слоя связи</p>
-              <p className="text-xs text-muted-foreground">
-                Пишете как человек @{meHandle}. Пейджер — статус и задачи. Чат — длинный текст. Полный — файлы, ролики, конверты с паролем.
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">Свой рой: три слоя связи</p>
+                  <p className="text-xs text-muted-foreground">
+                    Три слоя, разный стиль. Пейджер — коротко (статус, задача). Чат — длинный текст. Полный — файл/ролик/конверт. Агенты отвечают в том же слое; длинное из пейджера уходит в чат, файл — в полный. Фильтры справа — только просмотр ленты.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-1">
+                  <Button
+                    size="sm"
+                    variant={(data.talkMode ?? "qa") === "qa" ? "default" : "outline"}
+                    disabled={talkBusy}
+                    title="Один ответ, затем done. Диалог сам не крутится."
+                    onClick={() => void setTalkMode("qa")}
+                  >
+                    Вопрос–Ответ
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={data.talkMode === "qaq" ? "default" : "outline"}
+                    disabled={talkBusy}
+                    title="Ответ уходит как page без done — напарник снова будится. Стоп снимает круг."
+                    onClick={() => void setTalkMode("qaq")}
+                  >
+                    Вопрос–Ответ–Вопрос
+                  </Button>
+                  {(data.haltUntil ?? 0) > Date.now() ? (
+                    <Button size="sm" variant="outline" disabled={halting} onClick={() => void haltModels(true)}>
+                      Снова можно
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={halting}
+                      title="Снять ходы OpenClaw у нод роя. Без токенов модели."
+                      onClick={() => void haltModels(false)}
+                    >
+                      <Octagon className="size-3.5" />
+                      Стоп
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {(data.talkMode ?? "qa") === "qaq"
+                  ? "Режим Вопрос–Ответ–Вопрос: агент отвечает page, без done. Круг рвёт Стоп."
+                  : "Режим Вопрос–Ответ: один ход, затем done."}
               </p>
+              {(data.haltUntil ?? 0) > Date.now() ? (
+                <p className="mt-1 text-xs text-rose-300">
+                  Модели сняты до {new Date(data.haltUntil ?? 0).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}. Новые пейджи не будят ход.
+                </p>
+              ) : null}
               <div className="mt-2 flex flex-wrap gap-1">
                 {(["all", "pager", "chat", "full"] as const).map((item) => (
                   <Button key={item} size="sm" variant={filter === item ? "default" : "outline"} onClick={() => setFilter(item)}>
@@ -339,6 +563,7 @@ export function HiveApp() {
                       message={message}
                       from={membersById.get(message.fromId)}
                       to={message.toId ? membersById.get(message.toId) : undefined}
+                      toYou={Boolean(message.toId && message.toId === data.me.id)}
                     />
                   ))
                 )}
@@ -357,14 +582,19 @@ export function HiveApp() {
                   Полный
                 </Button>
               </div>
-              {lane === "pager" ? (
-                <div className="mb-2 flex flex-wrap gap-1">
-                  <Button size="sm" variant={kind === "task_assigned" ? "default" : "outline"} onClick={() => { setKind("task_assigned"); setToId(linux?.id); setDraft(`@linux поставил задачу #244 «Короткий отчёт по рою». Жду исполнения.`); }}>
+              <div className="mb-2 flex flex-wrap gap-1">
+                  <Button size="sm" variant={kind === "task_assigned" ? "default" : "outline"} onClick={() => {
+                    const handle = taskTarget?.handle || "office";
+                    setKind("task_assigned");
+                    setToId(taskTarget?.id);
+                    setDraft(`@${handle} задача: напиши в чат Hive коротко, что принял, и задай один вопрос @main. MAG не трогай.`);
+                  }}>
                     Поставил задачу
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => { setKind("page"); setDraft("Принято, смотрю."); }}>Короткий пейдж</Button>
+                  {lane === "pager" ? (
+                    <Button size="sm" variant="outline" onClick={() => { setKind("page"); setDraft("Принято, смотрю."); }}>Короткий пейдж</Button>
+                  ) : null}
                 </div>
-              ) : null}
               {lane === "chat" ? (
                 <p className="mb-2 text-xs text-muted-foreground">До 8000 знаков, 7 дней. Скиллы текстом, пояснения, выдержки из KB. Не статус задачи.</p>
               ) : null}

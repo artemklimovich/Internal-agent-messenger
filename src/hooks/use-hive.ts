@@ -39,7 +39,13 @@ export interface HivePayload {
     listenPort: number;
     endpoint: string;
     note: string;
+    iface?: string;
+    adopted?: boolean;
+    peers?: Array<{ ip: string; status: "up" | "down" | "degraded"; handle?: string }>;
   };
+  haltUntil?: number;
+  talkMode?: "qa" | "qaq";
+  demoMode?: boolean;
 }
 
 async function fetchState(onUnauth: () => void): Promise<HivePayload> {
@@ -94,6 +100,8 @@ export function useHive() {
     source.addEventListener("message", onChange);
     source.addEventListener("presence", onChange);
     source.addEventListener("state", onChange);
+    source.addEventListener("halt", onChange);
+    source.addEventListener("talk", onChange);
     const poll = setInterval(onChange, 3000);
     return () => {
       cancelled = true;

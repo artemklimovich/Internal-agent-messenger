@@ -26,7 +26,7 @@ export function TunnelsView({
           <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Только свой рой</p>
           <h2 className="mt-1 text-2xl font-semibold">Туннели своих машин</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Закрытый контур: HTTP хаба на 10.42.0.1, с улицы только UDP WireGuard. Reverse SSH — запас, если WG ещё не поднят. Overlay — не эфир.
+            Закрытый контур: если WireGuard уже поднят, Hive его подхватывает и рисует карту. Второй overlay 10.42 — только если своего туннеля нет. С улицы только UDP WG. Reverse SSH — запас. Рация и админка машин — один контур.
           </p>
         </div>
         <Button onClick={onExport} disabled={exporting}>
@@ -61,63 +61,64 @@ export function TunnelsView({
 }
 
 function Mesh({ data }: { data: HivePayload }) {
-  const nodes = data.tunnels.map((tunnel, index) => {
-    const n = data.tunnels.length || 1;
-    const angle = (Math.PI * 2 * index) / n - Math.PI / 2;
-    return {
-      tunnel,
-      member: data.members.find((item) => item.id === tunnel.agentId),
-      x: 160 + Math.cos(angle) * 95,
-      y: 120 + Math.sin(angle) * 78,
-    };
-  });
+  const hubIp = data.overlay?.hubIp || "10.42.0.1";
+  const livePeers = data.overlay?.peers?.length
+    ? data.overlay.peers
+    : data.tunnels.map((tunnel) => ({
+        ip: tunnel.overlayIp,
+        status: tunnel.status,
+        handle: data.members.find((item) => item.id === tunnel.agentId)?.handle,
+      }));
+  const nodes = [
+    { id: "hub", label: `хаб ${hubIp}`, status: "up" as const, x: 160, y: 120 },
+    ...livePeers.map((peer, index) => {
+      const n = livePeers.length || 1;
+      const angle = (Math.PI * 2 * index) / n - Math.PI / 2;
+      const handle = peer.handle || data.members.find((item) => data.tunnels.find((t) => t.overlayIp === peer.ip)?.agentId === item.id)?.handle;
+      return {
+        id: peer.ip,
+        label: `${handle ? `@${handle} ` : ""}${peer.ip}`,
+        status: peer.status,
+        x: 160 + Math.cos(angle) * 95,
+        y: 120 + Math.sin(angle) * 78,
+      };
+    }),
+  ];
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Меш роя</CardTitle>
+        <CardTitle className="text-base">Карта туннеля {data.overlay?.iface ? `· ${data.overlay.iface}` : ""}</CardTitle>
       </CardHeader>
       <CardContent>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Звезда: хаб видит каждую машину по IP. Hop через 2–3 узла — да, если маршрут и AllowedIPs знают, где она. Не полный mesh агент-агент.
+        </p>
         <svg viewBox="0 0 320 240" className="h-56 w-full">
-          {nodes.map((from) =>
-            nodes.map((to) =>
-              from.tunnel.id < to.tunnel.id ? (
-                <line
-                  key={`${from.tunnel.id}-${to.tunnel.id}`}
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  className={
-                    from.tunnel.status === "down" || to.tunnel.status === "down"
-                      ? "stroke-rose-400/30"
-                      : "stroke-amber-200/25"
-                  }
-                  strokeWidth="1"
-                />
-              ) : null,
-            ),
-          )}
+          {nodes
+            .filter((node) => node.id !== "hub")
+            .map((node) => (
+              <line
+                key={`hub-${node.id}`}
+                x1={160}
+                y1={120}
+                x2={node.x}
+                y2={node.y}
+                className={node.status === "down" ? "stroke-rose-400/30" : "stroke-amber-200/40"}
+                strokeWidth="1.5"
+              />
+            ))}
           {nodes.map((node) => (
-            <g key={node.tunnel.id}>
+            <g key={node.id}>
               <circle
                 cx={node.x}
                 cy={node.y}
-                r="14"
+                r={node.id === "hub" ? 16 : 12}
                 className={
-                  node.tunnel.status === "up"
-                    ? "fill-amber-300"
-                    : node.tunnel.status === "degraded"
-                      ? "fill-orange-400"
-                      : "fill-zinc-500"
+                  node.status === "up" ? "fill-amber-300" : node.status === "degraded" ? "fill-orange-400" : "fill-zinc-500"
                 }
               />
-              <text
-                x={node.x}
-                y={node.y + 28}
-                textAnchor="middle"
-                className="fill-current text-[10px]"
-              >
-                @{node.member?.handle} · {node.tunnel.overlayIp.replace("10.42.0.", ".")}
+              <text x={node.x} y={node.y + 28} textAnchor="middle" className="fill-current text-[10px]">
+                {node.label.replace(/\b10\.\d+\.\d+\./, ".")}
               </text>
             </g>
           ))}
@@ -151,7 +152,7 @@ function TunnelCard({ tunnel, member }: { tunnel: Tunnel & { sshCommand?: string
         ) : null}
         {tunnel.wireguard ? (
           <p className="text-muted-foreground">
-            WG {tunnel.wireguard.fallback ? "fallback" : "primary"} · {tunnel.wireguard.publicKey.slice(0, 16)}…
+            WG {tunnel.status} · handshake {tunnel.wireguard.lastHandshakeAt ? new Date(tunnel.wireguard.lastHandshakeAt).toLocaleTimeString() : "нет"}
           </p>
         ) : null}
         <p>{tunnel.notes}</p>
@@ -168,32 +169,42 @@ function TunnelCard({ tunnel, member }: { tunnel: Tunnel & { sshCommand?: string
 
 function OverlayConfigs() {
   const [hub, setHub] = useState<string>("");
+  const [hint, setHint] = useState<string>("");
+  const [adopted, setAdopted] = useState(false);
   const [agents, setAgents] = useState<Array<{ agentId: string; overlayIp: string; conf: string }>>([]);
   useEffect(() => {
     void fetch("/api/hive/tunnels")
       .then((response) => response.json())
-      .then((json: { hubWgConfig?: string; overlay?: { agents?: Array<{ agentId: string; overlayIp: string; conf: string }> } }) => {
+      .then((json: {
+        hubWgConfig?: string;
+        overlay?: { agents?: Array<{ agentId: string; overlayIp: string; conf: string }>; hint?: string; adopted?: boolean; iface?: string; hubIp?: string };
+      }) => {
         setHub(json.hubWgConfig ?? "");
         setAgents(json.overlay?.agents ?? []);
+        setHint(json.overlay?.hint ?? "");
+        setAdopted(Boolean(json.overlay?.adopted));
       })
       .catch(() => undefined);
   }, []);
-  if (!hub && agents.length === 0) return null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">WireGuard: хаб 10.42.0.1 и агенты</CardTitle>
+        <CardTitle className="text-base">{adopted ? "WireGuard уже стоит — Hive его подхватил" : "WireGuard: новый overlay 10.42 только если своего ещё нет"}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <p className="text-xs text-muted-foreground">
-          На хабе: сохранить как /etc/wireguard/hive0.conf → wg-quick up hive0, затем HIVE_BIND=10.42.0.1. Приватные ключи не в эфир и не в MAG KB.
+          {hint || "Пакет ноды проверяет wg: если интерфейс живой — рисуем карту и будим по его IP. Если нет — ставим WG вместе с hive-node."}
         </p>
-        {hub ? <pre className="max-h-48 overflow-auto rounded-md bg-black/30 p-2 text-[11px] whitespace-pre-wrap">{hub}</pre> : null}
-        {agents.map((item) => (
-          <pre key={item.agentId} className="max-h-40 overflow-auto rounded-md bg-black/30 p-2 text-[11px] whitespace-pre-wrap">
-            {item.conf}
-          </pre>
-        ))}
+        {adopted ? null : (
+          <>
+            {hub ? <pre className="max-h-48 overflow-auto rounded-md bg-black/30 p-2 text-[11px] whitespace-pre-wrap">{hub}</pre> : null}
+            {agents.map((item) => (
+              <pre key={item.agentId} className="max-h-40 overflow-auto rounded-md bg-black/30 p-2 text-[11px] whitespace-pre-wrap">
+                {item.conf}
+              </pre>
+            ))}
+          </>
+        )}
       </CardContent>
     </Card>
   );

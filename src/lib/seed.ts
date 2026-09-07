@@ -61,6 +61,7 @@ export function createEmptyWorld(): World {
     secrets: [],
     peerHubs: [],
     loginGuard: {},
+    demoMode: true,
   };
 }
 
@@ -118,7 +119,7 @@ function ownedAgents(swarmId: string, t: number): Member[] {
       os: "linux",
       presence: "free",
       lastSeenAt: t,
-      machine: "magtask / Ubuntu 24.04",
+      machine: "hive-hub / Ubuntu 24.04",
       region: "свой контур",
       capabilities: ["MCP MAG Master", "постановка"],
       simulated: true,
@@ -190,7 +191,7 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
       overlayIp: "10.42.0.2",
       status: "up",
       ssh: {
-        host: "magtask.internal",
+        host: "hive-hub.internal",
         user: "openclaw",
         reversePort: 22001,
         gatewayPort: 18789,
@@ -198,7 +199,7 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
       },
       wireguard: {
         publicKey: "oRch3str4t0rDemoKeyAAAAAAAAAAAAAAAAAAAAAA=",
-        endpoint: "magtask.internal:51820",
+        endpoint: "hive-hub.internal:51820",
         listenPort: 51820,
         allowedIps: "10.42.0.2/32",
         lastHandshakeAt: t,
@@ -249,6 +250,14 @@ function ownedTunnels(swarmId: string, agents: Member[], t: number): Tunnel[] {
       notes: "SSH режется, свой WG overlay. Чужим роям этот ключ не виден.",
     },
   ];
+}
+
+export function demoOwnedAgents(swarmId: string, t = Date.now()) {
+  return ownedAgents(swarmId, t);
+}
+
+export function demoOwnedTunnels(swarmId: string, agents: Member[], t = Date.now()) {
+  return ownedTunnels(swarmId, agents, t);
 }
 
 export function handleFromEmail(email: string) {

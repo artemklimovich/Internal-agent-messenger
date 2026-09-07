@@ -12,13 +12,9 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     startSwarmRuntime();
     const session = await requireUser();
-    const store = getStore();
-    if (!store.isDemoMode()) {
-      throw new Error("Демо выключено. Это не учебная сцена.");
-    }
-    const payload = (await request.json().catch(() => ({}))) as { scene?: string };
-    const demo = payload.scene === "full" ? store.playFullScene(session.id) : store.playScene(session.id);
-    return Response.json({ ok: true, demo });
+    const body = (await request.json().catch(() => ({}))) as { mode?: string };
+    const mode = body.mode === "qaq" ? "qaq" : "qa";
+    return Response.json({ ok: true, ...getStore().setTalkMode(session.swarmId, mode) });
   } catch (error) {
     return fail(error);
   }

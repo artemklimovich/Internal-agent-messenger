@@ -96,6 +96,10 @@ export interface Swarm {
   magConnect?: MagConnect;
   overlayOnly?: boolean;
   policy?: Partial<SwarmPolicy>;
+  /** Unix ms; hive-nodes refuse new model wakes while Date.now() < haltUntil */
+  haltUntil?: number;
+  /** qa = one reply then done; qaq = reply as page so the peer asks again */
+  talkMode?: "qa" | "qaq";
 }
 
 export interface PeerHub {
@@ -209,6 +213,9 @@ export interface Message {
   secretId?: string;
   createdAt: number;
   expiresAt: number;
+  /** Client-ticking occupancy; no model tokens. Frozen when workElapsedMs is set. */
+  workStartedAt?: number;
+  workElapsedMs?: number;
 }
 
 export interface AgentKey {
@@ -217,12 +224,14 @@ export interface AgentKey {
 }
 
 export interface HiveEvent {
-  type: "state" | "message" | "presence" | "tunnel" | "demo" | "ping" | "hello";
+  type: "state" | "message" | "presence" | "tunnel" | "demo" | "ping" | "hello" | "halt" | "talk";
   at: number;
   message?: Message;
   member?: Member;
   tunnel?: Tunnel;
   swarmId?: string;
+  haltUntil?: number;
+  talkMode?: "qa" | "qaq";
 }
 
 export interface World {
@@ -237,6 +246,8 @@ export interface World {
   secrets: SealedSecret[];
   peerHubs: PeerHub[];
   loginGuard: Record<string, { fails: number; lockedUntil?: number }>;
+  /** false = учебные @linux/@nora и автосцена выключены. undefined = демо включено. */
+  demoMode?: boolean;
 }
 
 export interface SendMessageInput {
@@ -251,6 +262,7 @@ export interface SendMessageInput {
   scope?: MessageScope;
   attachments?: Attachment[];
   secret?: { label: string; login: string; password: string };
+  workTimer?: boolean;
 }
 
 export interface RegisterAgentInput {

@@ -19,14 +19,17 @@ export function startSwarmRuntime() {
     });
   });
   setInterval(() => {
+    store.syncLiveTunnels();
+    store.expireStaleWork();
     for (const member of store.snapshotMembers()) {
-      if (member.simulated) store.heartbeat(member.id);
+      if (store.isDemoMode() && member.simulated) store.heartbeat(member.id);
     }
   }, 12_000);
 }
 
 async function react(message: Message) {
   const store = getStore();
+  if (!store.isDemoMode()) return;
   const target = store.memberById(message.toId ?? "");
   if (!target?.simulated) return;
   if (message.fromId === target.id) return;

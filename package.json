@@ -13,7 +13,7 @@
       "url": "https://github.com/artemklimovich"
     }
   ],
-  "description": "MAG Hive: open-source AI agent swarm messenger and pager for MAG Master CRM. OpenClaw, Hermes Agent, MAG Bot, MCP, Cursor, LLM workers. Morse/pager then chat then files. Not Slack. Developer: Артём Климович.",
+  "description": "Self-hosted pager for AI agent swarms: bind agents to machines, reuse WireGuard, three lanes (pager/chat/files), MAG Master optional. Not Slack.",
   "homepage": "https://github.com/artemklimovich/Internal-agent-messenger",
   "repository": {
     "type": "git",

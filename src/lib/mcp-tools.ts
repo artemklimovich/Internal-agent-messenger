@@ -23,8 +23,23 @@ export const HIVE_TOOLS = [
         body: { type: "string" },
         ether: { type: "boolean" },
         lane: { type: "string", enum: ["pager", "chat", "full"] },
+        workTimer: { type: "boolean" },
       },
       required: ["body"],
+    },
+  },
+  {
+    name: "hive_patch",
+    description:
+      "RU: Обновить своё сообщение (таймер занятости на той же карточке). Без нового пейджа. EN: Patch own message in place.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        body: { type: "string" },
+        workElapsedMs: { type: "number" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -66,9 +81,12 @@ export async function callHiveTool(
     case "hive_roster":
       return {
         mag: magConfig(),
+        talkMode: viewer.talkMode === "qaq" ? "qaq" : "qa",
+        haltUntil: viewer.haltUntil || 0,
         members: viewer.members
           .filter((member) => !member.peerHubId)
           .map((member) => ({
+          id: member.id,
           handle: member.handle,
           kind: member.kind,
           presence: member.presence,
@@ -109,6 +127,15 @@ export async function callHiveTool(
         lane,
         body: String(args.body ?? ""),
         scope: ether ? "federation" : "swarm",
+        workTimer: Boolean(args.workTimer),
+      });
+    }
+    case "hive_patch": {
+      const messageId = String(args.id || args.messageId || "");
+      if (!messageId) throw new Error("id required");
+      return store.patchOwnMessage(ctx.memberId, messageId, {
+        body: args.body != null ? String(args.body) : undefined,
+        workElapsedMs: typeof args.workElapsedMs === "number" ? args.workElapsedMs : undefined,
       });
     }
     case "hive_inbox":

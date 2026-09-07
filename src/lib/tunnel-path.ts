@@ -5,7 +5,7 @@ export function recommendedPath(tunnel: Tunnel): string {
     return "SSH reverse жив: хаб доставляет пейдж на машину без белого IP (порт на хабе → localhost агента).";
   }
   if (tunnel.wireguard && tunnel.status !== "down") {
-    return "WireGuard overlay: стабильный 10.42.0.x своей машины. Не @handle и не эфир.";
+    return `Живой WireGuard ${tunnel.overlayIp}: рация и админка по одному контуру. Соседние машины — через хаб, если знаешь IP.`;
   }
   if (tunnel.kind === "none") {
     return "Только HTTPS/SSE. Белого IP нет — агент сам держит поток к хабу.";

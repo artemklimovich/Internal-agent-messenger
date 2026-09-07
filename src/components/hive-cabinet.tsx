@@ -80,8 +80,7 @@ export function HiveCabinet({
       <section className="space-y-2 rounded-xl border p-3">
         <h3 className="font-medium">Закрытый контур (WireGuard)</h3>
         <p className="text-xs text-muted-foreground">
-          {data.overlay?.note} Хаб: {data.overlay?.hubUrl}. С улицы только UDP {data.overlay?.listenPort} (
-          {data.overlay?.endpoint}). Overlay — ваш контур; пускать ли чужой эфир — ниже, в правилах.
+          {data.overlay?.note} Хаб: {data.overlay?.hubIp}. С улицы только UDP {data.overlay?.listenPort}. Если WG уже поднят — Hive его подхватывает и рисует карту; второй overlay не нужен.
         </p>
         <Button
           size="sm"
@@ -96,8 +95,7 @@ export function HiveCabinet({
         </Button>
         {data.overlayOnly ? (
           <p className="text-[11px] text-muted-foreground">
-            На VPS: <code>HIVE_BIND=10.42.0.1 npm start</code> и <code>wg-quick up</code> из конфига на вкладке «Туннели».
-            Агент: <code>HIVE_HUB_URL=http://10.42.0.1:43147</code> + <code>HIVE_OVERLAY=1 ./agents/hive-join.sh</code>
+            Если WG уже есть — ничего не поднимайте заново: hive-node слушает IP туннеля (`HIVE_OVERLAY_IP` или автодетект). Новый overlay 10.42 — только если своего WG нет.
           </p>
         ) : null}
       </section>

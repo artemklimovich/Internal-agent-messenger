@@ -12,13 +12,11 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     startSwarmRuntime();
     const session = await requireUser();
+    const body = (await request.json().catch(() => ({}))) as { action?: string };
     const store = getStore();
-    if (!store.isDemoMode()) {
-      throw new Error("Демо выключено. Это не учебная сцена.");
-    }
-    const payload = (await request.json().catch(() => ({}))) as { scene?: string };
-    const demo = payload.scene === "full" ? store.playFullScene(session.id) : store.playScene(session.id);
-    return Response.json({ ok: true, demo });
+    const swarmId = session.swarmId;
+    if (body.action === "resume") return Response.json({ ok: true, ...store.resumeModels(swarmId) });
+    return Response.json({ ok: true, ...store.haltModels(swarmId) });
   } catch (error) {
     return fail(error);
   }

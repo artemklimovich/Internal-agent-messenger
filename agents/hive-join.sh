@@ -1,22 +1,42 @@
 #!/usr/bin/env bash
 # Join MAG Hive from a machine WITHOUT a public/static IP.
 #
-# Closed overlay (preferred):
-#   export HIVE_AGENT_KEY=hive_...
-#   export HIVE_OVERLAY=1
-#   export HIVE_OVERLAY_IP=10.42.0.3          # from Tunnels
-#   export HIVE_WG_CONF=/etc/wireguard/hive0.conf
-#   ./agents/hive-join.sh
-#
-# Fallback reverse SSH (no WireGuard yet):
-#   export HIVE_HUB_URL=https://hive.example.com
-#   export HIVE_REVERSE_PORT=22002
-#   ./agents/hive-join.sh
+# Prefer an existing WireGuard (any 10.x overlay IP):
+#   HIVE_AGENT_KEY=hive_... ./agents/hive-join.sh
+# If WG is missing, the script tells you to install the package with the node.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KEY="${HIVE_AGENT_KEY:?set HIVE_AGENT_KEY}"
 WAKE_PORT="${HIVE_WAKE_PORT:-18790}"
 SSH_PID=""
+
+detect_overlay_ip() {
+  if [[ -n "${HIVE_OVERLAY_IP:-}" ]]; then
+    echo "$HIVE_OVERLAY_IP"
+    return
+  fi
+  if command -v ip >/dev/null 2>&1; then
+    ip -4 -o addr show | awk '/[[:space:]]10\.[0-9]+\.[0-9]+\.[0-9]+\// { print $4 }' | cut -d/ -f1 | head -1
+  fi
+}
+
+EXISTING_IP="$(detect_overlay_ip || true)"
+if [[ -n "$EXISTING_IP" && -z "${HIVE_FORCE_REVERSE:-}" ]]; then
+  export HIVE_OVERLAY_IP="$EXISTING_IP"
+  export HIVE_HUB_URL="${HIVE_HUB_URL:-http://10.42.0.1:43147}"
+  echo "[hive-join] подхватил WG IP $EXISTING_IP — второй overlay не ставлю"
+  HIVE_WAKE_PORT="$WAKE_PORT" node "$ROOT/agents/hive-node.mjs" &
+  NODE_PID=$!
+  cleanup() { kill "$NODE_PID" 2>/dev/null || true; }
+  trap cleanup EXIT INT TERM
+  wait "$NODE_PID"
+  exit 0
+fi
+
+if ! command -v wg >/dev/null 2>&1 && [[ "${HIVE_OVERLAY:-}" == "1" ]]; then
+  echo "[hive-join] WireGuard не найден. Поставьте пакет вместе с нодой: apt/wg-quick или Windows WireGuard, затем снова hive-join." >&2
+  exit 1
+fi
 
 if [[ "${HIVE_OVERLAY:-}" == "1" ]]; then
   export HIVE_HUB_URL="${HIVE_HUB_URL:-http://10.42.0.1:43147}"

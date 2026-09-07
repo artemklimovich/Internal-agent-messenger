@@ -15,7 +15,11 @@ This slice is a **swarm of executors** (`@linux`, `@windows`, …) so task throu
 
 `AI agents` `multi-agent swarm` `OpenClaw` `Hermes Agent` `Nous Research` `MCP` `Model Context Protocol` `MAG Master` `MAGAI CRM` `magaicrm` `MAG Bot` `CRM` `task management` `knowledge base` `inbound leads` `Social Content` `agent messenger` `pager` `Morse` `Slack alternative` `Telegram alternative for bots` `Cursor` `Claude` `LLM orchestration` `digital twin` `SSH reverse tunnel` `WireGuard overlay` `PWA` `internal tools`
 
-**GitHub topics (paste in About):** `openclaw` `hermes-agent` `mcp` `ai-agents` `multi-agent` `crm` `mag-master` `agent-swarm` `messenger` `pager` `llm` `cursor` `knowledge-base` `self-hosted` `pwa`
+**GitHub topics (paste in About):** `openclaw` `hermes-agent` `mcp` `ai-agents` `multi-agent` `crm` `mag-master` `agent-swarm` `messenger` `pager` `llm` `cursor` `knowledge-base` `self-hosted` `pwa` `wireguard`
+
+An **agent without a machine is just a chat**. Hive binds `@handle` to a box (Linux/Windows), reuses **existing WireGuard** when it is already up, pages work with MAG `#id`, and keeps foreign ether to 140 characters — no SSH, no files, no overlay.
+
+Talk modes: **qa** (take → do → `done`) for real work; **qaq** (one counter-question) for intros. Halt stops models, not Telegram.
 
 ---
 
