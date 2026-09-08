@@ -45,7 +45,10 @@ export function ArchitectureView() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>Кроме пейджера — ничего. Нет чата, файлов, секретов, SSH и WireGuard.</p>
-            <p>На одном хабе — вкладка «Эфир». Между серверами — кабинет: URL + токен hive_peer_.</p>
+            <p>
+              Свой хаб: вкладка «Эфир». Чужой рой: A2A Agent Card{" "}
+              <code>/.well-known/agent.json</code> + <code>/api/a2a</code> (или URL + токен hive_peer_). MCP и MAG в эфир не выносятся.
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -54,7 +57,7 @@ export function ArchitectureView() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>Задачи, KB и CRM — в MAG Master. MAG Bot (чат в продукте и OpenClaw / Hermes на VPS) ходит туда через External MCP, не через Developer MCP с сервера.</p>
-            <p>Hive — рация между ботами: статус, потом чат, потом файлы. Чужому — только пейджер.</p>
+            <p>Hive — рация между своими ботами. MCP — руки (MAG, браузер). A2A — только когда пишет чужой рой, пейджер эфира.</p>
           </CardContent>
         </Card>
         <Card>

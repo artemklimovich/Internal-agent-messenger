@@ -1,7 +1,6 @@
 import { requireUser } from "@/lib/auth";
-import { assertSameOrigin } from "@/lib/crypto-security";
 import { fail } from "@/lib/http";
-import { exportRegistryToMag, magConfig } from "@/lib/mag-master";
+import { magConfig } from "@/lib/mag-master";
 import { getStore } from "@/lib/store";
 import { startSwarmRuntime } from "@/lib/swarm-runtime";
 import { agentWireguardConf } from "@/lib/overlay";
@@ -27,25 +26,6 @@ export async function GET() {
       hubWgConfig: overlay.hubConf,
       knowledgeBase: getStore().exportKnowledgeBase(session.swarmId),
     });
-  } catch (error) {
-    return fail(error);
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    assertSameOrigin(request);
-    startSwarmRuntime();
-    const session = await requireUser();
-    const body = (await request.json()) as { exportToMag?: boolean };
-    if (body.exportToMag) {
-      const mag = await exportRegistryToMag(session.swarmId);
-      return Response.json({
-        mag,
-        knowledgeBase: getStore().exportKnowledgeBase(session.swarmId),
-      });
-    }
-    throw new Error("только экспорт реестра своего роя");
   } catch (error) {
     return fail(error);
   }

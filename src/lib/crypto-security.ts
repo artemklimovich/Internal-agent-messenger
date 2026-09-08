@@ -33,6 +33,12 @@ export function newSecret() {
   return randomBytes(32).toString("hex");
 }
 
+export function requestIp(request: Request) {
+  const real = request.headers.get("x-real-ip")?.trim().replace(/^::ffff:/, "") ?? "";
+  if (real && !real.includes(",") && !real.includes(" ")) return real;
+  return "ip";
+}
+
 export function assertSameOrigin(request: Request) {
   if (request.method === "GET" || request.method === "HEAD") return;
   if (process.env.NODE_ENV !== "production") return;
@@ -43,6 +49,13 @@ export function assertSameOrigin(request: Request) {
     request.headers.get("host");
   if (!host) throw new Error("forbidden");
   if (new URL(origin).host !== host) throw new Error("forbidden origin");
+}
+
+/** Cookie-формы входа: без Origin с улицы не принимаем (curl/бот). hive-node сюда не ходит. */
+export function assertBrowserOrigin(request: Request) {
+  if (process.env.NODE_ENV !== "production") return;
+  if (!request.headers.get("origin")) throw new Error("forbidden origin");
+  assertSameOrigin(request);
 }
 
 const buckets = new Map<string, { count: number; resetAt: number }>();

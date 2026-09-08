@@ -5,10 +5,10 @@
  *   HIVE_HUB_URL=… HIVE_AGENT_KEY=hive_… node hive-node.mjs
  *   HIVE_AUTO_ACK=0 — only log, do not reply
  */
-import { createServer } from "node:http";
+import { existsSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { execFile, spawn } from "node:child_process";
-import { openSync, writeFileSync } from "node:fs";
-import { tmpdir, networkInterfaces } from "node:os";
+import { createServer } from "node:http";
+import { homedir, networkInterfaces, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const hub = (process.env.HIVE_HUB_URL || "http://127.0.0.1:43147").replace(/\/$/, "");
@@ -23,6 +23,65 @@ let currentChild = null;
 if (!key) {
   console.error("Задайте HIVE_AGENT_KEY из кабинета своего роя (ключ показывается один раз).");
   process.exit(1);
+}
+
+const hostAgent = process.env.OPENCLAW_AGENT || "main";
+
+function discoverOpenclawAgents() {
+  const fromEnv = (process.env.HIVE_OPENCLAW_AGENTS || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (fromEnv.length) return [...new Set(fromEnv)];
+  const configPath =
+    process.env.OPENCLAW_CONFIG || join(process.env.HOME || homedir(), ".openclaw", "openclaw.json");
+  try {
+    if (!existsSync(configPath)) return [hostAgent];
+    const cfg = JSON.parse(readFileSync(configPath, "utf8"));
+    const allow = cfg?.agents?.entries?.[hostAgent]?.subagents?.allowAgents;
+    if (Array.isArray(allow) && allow.length) {
+      return [...new Set(allow.map((item) => String(item).toLowerCase()).filter(Boolean))];
+    }
+    const entries = cfg?.agents?.entries && typeof cfg.agents.entries === "object" ? Object.keys(cfg.agents.entries) : [];
+    return entries.length ? entries.map((item) => item.toLowerCase()) : [hostAgent];
+  } catch {
+    return [hostAgent];
+  }
+}
+
+function openclawDisplayName(id) {
+  const configPath =
+    process.env.OPENCLAW_CONFIG || join(process.env.HOME || homedir(), ".openclaw", "openclaw.json");
+  try {
+    if (!existsSync(configPath)) return id;
+    const cfg = JSON.parse(readFileSync(configPath, "utf8"));
+    const name = cfg?.agents?.entries?.[id]?.name;
+    return typeof name === "string" && name.trim() ? name.trim() : id;
+  } catch {
+    return id;
+  }
+}
+
+function subagentPayload() {
+  return discoverOpenclawAgents().map((handle) => ({ handle, name: openclawDisplayName(handle) }));
+}
+
+function resolveWakeAgent(message) {
+  const listed = discoverOpenclawAgents();
+  const hinted = String(message.openclawAgent || message.toHandle || "")
+    .replace(/^@/, "")
+    .toLowerCase();
+  if (hinted && listed.includes(hinted)) return hinted;
+  const toId = String(message.toId || "");
+  if (toId && idToHandle.has(toId)) {
+    const handle = String(idToHandle.get(toId)).toLowerCase();
+    if (listed.includes(handle)) return handle;
+  }
+  const body = String(message.body || "");
+  for (const id of listed) {
+    if (id !== hostAgent && body.includes(`@${id}`)) return id;
+  }
+  return hostAgent;
 }
 
 let since = 0;
@@ -216,6 +275,7 @@ function shouldAck(message) {
   const fromAgent = fromId.includes(":") && !fromHuman;
   if (fromHuman) qaqTurns = 0;
   if (kind === "progress" || kind === "blocked") return false;
+  if (fromAgent && (kind === "chat" || kind === "artifact")) return false;
   if (seenFact(message.body)) return false;
   if (talkMode === "qaq" && fromAgent && (kind === "page" || kind === "chat" || kind === "done")) {
     qaqTurns += 1;
@@ -232,7 +292,7 @@ function shouldAck(message) {
   return false;
 }
 
-async function hiveSend({ to, kind, body, lane = "pager", workTimer = false }) {
+async function hiveSend({ to, kind, body, lane = "pager", workTimer = false, as }) {
   const max = laneMax(lane);
   const rpc = await json("/api/mcp", {
     method: "POST",
@@ -242,7 +302,14 @@ async function hiveSend({ to, kind, body, lane = "pager", workTimer = false }) {
       method: "tools/call",
       params: {
         name: "hive_send",
-        arguments: { to, lane, kind, body: String(body || "").slice(0, max), workTimer },
+        arguments: {
+          to,
+          lane,
+          kind,
+          body: String(body || "").slice(0, max),
+          workTimer,
+          ...(as ? { as } : {}),
+        },
       },
     }),
   });
@@ -267,10 +334,14 @@ async function hivePatch(id, patch) {
   });
 }
 
-async function setPresence(presence, currentTaskId) {
+async function setPresence(presence, currentTaskId, asHandle) {
   await json("/api/hive/agents", {
     method: "PATCH",
-    body: JSON.stringify({ presence, currentTaskId }),
+    body: JSON.stringify({
+      presence,
+      currentTaskId,
+      ...(asHandle ? { forHandle: asHandle } : {}),
+    }),
   });
 }
 
@@ -316,9 +387,11 @@ function parseAgentReply(stdout) {
   }
 }
 
-function runOpenClawAgent(prompt, timeoutSec = Number(process.env.OPENCLAW_TIMEOUT || 90)) {
-  const agent = process.env.OPENCLAW_AGENT || "main";
-  const sessionKey = process.env.OPENCLAW_SESSION_KEY || `agent:${agent}:hive-pager`;
+function runOpenClawAgent(prompt, timeoutSec = Number(process.env.OPENCLAW_TIMEOUT || 90), agent = hostAgent) {
+  const sessionKey =
+    agent === hostAgent && process.env.OPENCLAW_SESSION_KEY
+      ? process.env.OPENCLAW_SESSION_KEY
+      : `agent:${agent}:hive-pager`;
   const bin = process.env.OPENCLAW_BIN || "openclaw";
   const msgFile = join(tmpdir(), `hive-wake-${process.pid}-${Date.now()}.txt`);
   writeFileSync(msgFile, prompt, "utf8");
@@ -420,7 +493,9 @@ async function ackPager(message) {
     acked.add(id);
     if (acked.size > 200) acked.delete(acked.values().next().value);
   }
-  if (idToHandle.size === 0) await refreshRoster().catch(() => undefined);
+  if (idToHandle.size === 0 || (message.toId && !idToHandle.has(String(message.toId)))) {
+    await refreshRoster().catch(() => undefined);
+  }
   const to = senderHandle(message);
   const who = to || "оператор";
   const magId = message.taskRef?.magTaskId || (String(message.body || "").match(/MAG\s*#(\d{1,6})|#(\d{1,6})/) || []).slice(1).find(Boolean);
@@ -433,15 +508,16 @@ async function ackPager(message) {
     Boolean(magId) &&
     !radio &&
     (talkMode !== "qaq" || message.kind === "task_assigned");
-  const self = process.env.OPENCLAW_AGENT || "main";
+  const self = resolveWakeAgent(message);
   const review =
     message.kind === "done" &&
     magWork &&
     talkMode !== "qaq" &&
-    self === "main";
+    self === hostAgent;
   const qaq = talkMode === "qaq" && !radio && !magWork;
+  const talkPager = inLane === "pager" && !magWork;
   const timeoutSec =
-    inLane === "pager" && (radio || meet || qaq)
+    talkPager || radio || meet || qaq
       ? Number(process.env.OPENCLAW_TIMEOUT || 90)
       : Number(process.env.OPENCLAW_WORK_TIMEOUT || 420);
   const layerHint =
@@ -474,7 +550,7 @@ async function ackPager(message) {
           "Ответь подписью к файлу: что это, зачем, что делать дальше. Не пересказывай весь файл. Не дублируй @хэндл.",
           layerHint,
         ].filter(Boolean).join("\n")
-    : meet || qaq
+    : meet || qaq || talkPager
       ? [
           `Слой: пейджер MAG Hive. Ты @${self}.`,
           `Пишет: @${who}`,
@@ -508,6 +584,7 @@ async function ackPager(message) {
 
   if (!wakeOpenclaw) {
     await hiveSend({
+      as: self,
       to,
       kind: "blocked",
       body: radioBody(who, "рация жива, модель выключена (HIVE_WAKE_OPENCLAW)."),
@@ -516,6 +593,7 @@ async function ackPager(message) {
   }
   if (Date.now() < wakingUntil) {
     await hiveSend({
+      as: self,
       to,
       kind: "progress",
       body: radioBody(who, "уже думаю над другим пейджем, подождите."),
@@ -528,19 +606,20 @@ async function ackPager(message) {
   let statusCardId;
   try {
     const statusCard = await hiveSend({
+      as: self,
       to,
       kind: "progress",
       workTimer: !radio,
       body: radioBody(
         who,
-        review ? `читаю отчёт${task}…` : radio ? "думаю…" : inLane !== "pager" || meet || qaq ? "отвечаю…" : `взял${task}: работаю сам, в пейджер вернусь с итогом.`,
+        review ? `читаю отчёт${task}…` : radio ? "думаю…" : inLane !== "pager" || meet || qaq || talkPager ? "отвечаю…" : `взял${task}: работаю сам, в пейджер вернусь с итогом.`,
       ),
     });
     statusCardId = statusCard?.id;
-    await setPresence("busy", magId);
+    await setPresence("busy", magId, self);
     console.log(JSON.stringify({ type: "hive_ack", to: who, task: task || null, wake: true, talkMode, lane: inLane, mode: radio ? "radio" : review ? "review" : inLane !== "pager" || meet || qaq ? "talk" : "work", card: statusCardId || null }));
 
-    const result = await runOpenClawAgent(prompt, timeoutSec);
+    const result = await runOpenClawAgent(prompt, timeoutSec, self);
     const elapsed = Date.now() - workStarted;
     if (result.halted) {
       if (statusCardId && !radio) {
@@ -549,14 +628,14 @@ async function ackPager(message) {
           body: radioBody(who, `остановлено человеком${task}.`).slice(0, 280),
         }).catch(() => undefined);
       }
-      await setPresence("free", undefined);
+      await setPresence("free", undefined, self);
       console.log(JSON.stringify({ type: "hive_halted_run", to: who }));
       return;
     }
     if (statusCardId && !radio) {
       const base = radioBody(
         who,
-        review ? `читал отчёт${task}.` : inLane !== "pager" || meet || qaq ? "ответил." : `взял${task}: работал сам.`,
+        review ? `читал отчёт${task}.` : inLane !== "pager" || meet || qaq || talkPager ? "ответил." : `взял${task}: работал сам.`,
       );
       await hivePatch(statusCardId, {
         workElapsedMs: elapsed,
@@ -571,6 +650,7 @@ async function ackPager(message) {
       const replyKind = replyKindFor(replyLane, { radio, magWork, qaq });
       if (replyLane !== inLane && inLane === "pager") {
         await hiveSend({
+          as: self,
           to,
           kind: qaq ? "page" : "done",
           lane: "pager",
@@ -578,6 +658,7 @@ async function ackPager(message) {
         });
       }
       await hiveSend({
+        as: self,
         to,
         kind: replyKind,
         lane: replyLane,
@@ -585,34 +666,37 @@ async function ackPager(message) {
       });
       if ((magWork || message.kind === "task_assigned") && replyLane !== "chat") {
         await hiveSend({
+          as: self,
           to,
           kind: "chat",
           lane: "chat",
           body: radioBody(who, magId ? `MAG #${magId}: ${fact}` : fact, laneMax("chat")),
         });
       }
-      await setPresence("free", undefined);
+      await setPresence("free", undefined, self);
       console.log(JSON.stringify({ type: "hive_done", to: who, chars: result.text.length, lane: replyLane }));
       rememberFact(fact);
     } else {
       const reason = String(result.error || "ошибка").replace(/\s+/g, " ").slice(0, 140);
       await hiveSend({
+        as: self,
         to,
         kind: "blocked",
         body: radioBody(who, `не ответил: ${reason}`),
       });
-      await setPresence("free", undefined);
+      await setPresence("free", undefined, self);
       console.error(JSON.stringify({ type: "hive_wake_fail", error: reason, logFile: result.logFile }));
     }
   } catch (error) {
     console.error("[hive-node] ack", error.message || error);
     try {
       await hiveSend({
+        as: self,
         to,
         kind: "blocked",
         body: `@${who} сбой рации: ${String(error.message || error).slice(0, 120)}`,
       });
-      await setPresence("free", undefined);
+      await setPresence("free", undefined, self);
     } catch {
       /* ignore */
     }
@@ -639,7 +723,7 @@ function printMessage(message) {
 }
 
 async function drainInbox() {
-  await json("/api/hive/agents", { method: "PATCH", body: JSON.stringify({ heartbeat: true }) });
+  await json("/api/hive/agents", { method: "PATCH", body: JSON.stringify({ heartbeat: true, subagents: subagentPayload() }) });
   const inbox = await json(`/api/hive/inbox?after=${since}`);
   const messages = inbox.messages || [];
   if (catchUp) {
@@ -731,7 +815,7 @@ async function listenSse() {
           if (event.haltUntil) applyHalt(event.haltUntil);
           if (event.talkMode) applyTalkMode(event.talkMode);
         } else if (eventName === "ping" || event.type === "ping") {
-          void json("/api/hive/agents", { method: "PATCH", body: JSON.stringify({ heartbeat: true }) }).catch(() => undefined);
+          void json("/api/hive/agents", { method: "PATCH", body: JSON.stringify({ heartbeat: true, subagents: subagentPayload() }) }).catch(() => undefined);
         } else if (event.message) printMessage(event.message);
       } catch {
         /* ignore */

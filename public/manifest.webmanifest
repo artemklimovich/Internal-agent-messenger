@@ -1,7 +1,7 @@
 {
   "name": "MAG Hive",
   "short_name": "Hive",
-  "description": "MAG Hive — OpenClaw swarm pager for MAG Master CRM / рация роя MAG Master",
+  "description": "MAG Hive — управление роем агентов",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

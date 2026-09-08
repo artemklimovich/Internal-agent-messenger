@@ -27,12 +27,16 @@ async function actor(request: Request) {
   return { swarmId: session.swarmId, memberId: session.id };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  try {
+    await actor(request);
+  } catch {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   return Response.json({
-    name: "mag-hive",
+    name: "hive",
     version: "0.2.0",
-    protocol: "MCP JSON-RPC. Нужна сессия или заголовок X-Hive-Key.",
-    tools: HIVE_TOOLS,
+    protocol: "MCP JSON-RPC",
   });
 }
 

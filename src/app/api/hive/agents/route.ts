@@ -20,6 +20,8 @@ export async function PATCH(request: Request) {
       presence?: Presence;
       currentTaskId?: string;
       heartbeat?: boolean;
+      forHandle?: string;
+      subagents?: Array<{ handle: string; name?: string }>;
     };
     let memberId = body.id;
     if (key) {
@@ -27,6 +29,16 @@ export async function PATCH(request: Request) {
       if (!agent) throw new Error("unauthorized");
       assertOverlayClient(request, store.swarmById(agent.swarmId));
       memberId = agent.id;
+      if (!body.heartbeat && body.forHandle) {
+        const handle = body.forHandle.replace(/^@/, "").toLowerCase();
+        const child = store.snapshotMembers().find(
+          (item) =>
+            item.swarmId === agent.swarmId &&
+            item.handle === handle &&
+            (item.id === agent.id || item.hostId === agent.id),
+        );
+        if (child) memberId = child.id;
+      }
     } else {
       const session = await getSession();
       if (!session) throw new Error("unauthorized");
@@ -34,7 +46,11 @@ export async function PATCH(request: Request) {
       if (!member || member.swarmId !== session.swarmId) throw new Error("forbidden");
     }
     if (!memberId) throw new Error("id required");
-    if (body.heartbeat) return Response.json({ member: store.heartbeat(memberId) });
+    if (body.heartbeat) {
+      const member = store.heartbeat(memberId);
+      if (key && Array.isArray(body.subagents)) store.syncHostSubagents(memberId, body.subagents);
+      return Response.json({ member });
+    }
     if (!body.presence) throw new Error("presence or heartbeat required");
     return Response.json({
       member: store.setPresence(memberId, body.presence, body.currentTaskId),

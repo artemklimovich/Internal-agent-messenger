@@ -24,6 +24,7 @@ export const HIVE_TOOLS = [
         ether: { type: "boolean" },
         lane: { type: "string", enum: ["pager", "chat", "full"] },
         workTimer: { type: "boolean" },
+        as: { type: "string" },
       },
       required: ["body"],
     },
@@ -92,6 +93,7 @@ export async function callHiveTool(
           presence: member.presence,
           os: member.os,
           task: member.currentTaskId,
+          hostId: member.hostId,
         })),
       };
     case "hive_send": {
@@ -118,10 +120,19 @@ export async function callHiveTool(
       if (ether && etherHit?.id.startsWith("peer:")) {
         return store.sendToPeerHub(ctx.memberId, etherHit.id, String(args.body ?? ""));
       }
+      let fromId = ctx.memberId;
+      const asHandle = args.as ? String(args.as).replace(/^@/, "").toLowerCase() : "";
+      if (asHandle && asHandle !== own.handle) {
+        const child = viewer.members.find(
+          (member) => member.handle === asHandle && member.hostId === ctx.memberId && !member.peerHubId,
+        );
+        if (!child) throw new Error(`нельзя писать как @${asHandle}: это не подагент этой ноды`);
+        fromId = child.id;
+      }
       return store.send({
         roomId: ether ? "ether" : `${ctx.swarmId}:pager`,
         swarmId: ctx.swarmId,
-        fromId: ctx.memberId,
+        fromId,
         toId: to?.id,
         kind: args.kind as MessageKind | undefined,
         lane,

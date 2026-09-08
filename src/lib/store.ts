@@ -134,6 +134,11 @@ class HiveStore extends EventEmitter {
     return this.world.members.find((member) => member.id === id);
   }
 
+  registrationOpen() {
+    const humans = this.world.users.filter((user) => user.role !== "system").length;
+    return humans === 0 || process.env.HIVE_ALLOW_REGISTER === "1";
+  }
+
   register(input: { email: string; password: string; name: string }): SessionUser {
     const email = input.email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -143,11 +148,11 @@ class HiveStore extends EventEmitter {
       throw new Error("Пароль от 8 символов");
     }
     if (this.world.users.some((user) => user.email === email)) {
-      throw new Error("Такой email уже есть");
+      throw new Error("не вышло");
     }
     const humans = this.world.users.filter((user) => user.role !== "system").length;
     if (humans > 0 && process.env.HIVE_ALLOW_REGISTER !== "1") {
-      throw new Error("Регистрация на этом хабе закрыта. Войдите существующим аккаунтом.");
+      throw new Error("не вышло");
     }
     const user: User = {
       id: nid("user-"),
@@ -178,7 +183,7 @@ class HiveStore extends EventEmitter {
     const key = email.trim().toLowerCase();
     const guard = this.world.loginGuard[key] ?? { fails: 0 };
     if (guard.lockedUntil && guard.lockedUntil > Date.now()) {
-      throw new Error("Слишком много попыток. Подождите 15 минут.");
+      throw new Error("не вышло");
     }
     const user = this.world.users.find((item) => item.email === key);
     if (!user || user.disabled || user.role === "system" || !verifyPassword(password, user.passwordHash)) {
@@ -186,7 +191,7 @@ class HiveStore extends EventEmitter {
       if (guard.fails >= 8) guard.lockedUntil = Date.now() + 15 * 60_000;
       this.world.loginGuard[key] = guard;
       this.persist();
-      throw new Error("Неверный email или пароль");
+      throw new Error("не вышло");
     }
     this.world.loginGuard[key] = { fails: 0 };
     const swarm = this.swarmByOwner(user.id);
@@ -342,6 +347,11 @@ class HiveStore extends EventEmitter {
             : "Можно включить закрытый контур: рация своего роя поедет внутри WireGuard. Это настройка, не закон протокола.",
       },
       publicUrl: swarm.publicUrl ?? process.env.HIVE_PUBLIC_URL ?? "",
+      a2a: {
+        cardUrl: `${(swarm.publicUrl || process.env.HIVE_PUBLIC_URL || "").replace(/\/$/, "")}/.well-known/agent.json`,
+        rpcUrl: `${(swarm.publicUrl || process.env.HIVE_PUBLIC_URL || "").replace(/\/$/, "")}/api/a2a`,
+        note: "MCP для рук, свой Hive для своих машин, A2A когда заговорит чужой рой.",
+      },
       peerInviteSet: Boolean(swarm.peerInviteHash),
       lanes: {
         pager: { max: resolvePolicy(swarm).swarmPageMax, ttlHours: 24, etherMax: resolvePolicy(swarm).etherMax, etherTtlHours: 2 },
@@ -512,7 +522,8 @@ class HiveStore extends EventEmitter {
     const from = this.memberById(memberId);
     const message = this.world.messages.find((item) => item.id === messageId);
     if (!from || !message) throw new Error("unknown message");
-    if (message.fromId !== memberId) throw new Error("forbidden");
+    const allowed = message.fromId === memberId || this.hostOf(message.fromId)?.id === memberId;
+    if (!allowed) throw new Error("forbidden");
     if (typeof patch.body === "string") message.body = patch.body.slice(0, 8000);
     if (typeof patch.workElapsedMs === "number" && Number.isFinite(patch.workElapsedMs)) {
       message.workElapsedMs = Math.max(0, Math.floor(patch.workElapsedMs));
@@ -537,6 +548,7 @@ class HiveStore extends EventEmitter {
       lane?: MessageLane;
       attachments?: Attachment[];
       secret?: { label: string; login: string; password: string };
+      magTaskId?: string;
     },
   ) {
     const swarm = this.swarmByOwner(userId);
@@ -596,6 +608,9 @@ class HiveStore extends EventEmitter {
       scope,
       attachments: input.attachments,
       secret: input.secret,
+      taskRef: input.magTaskId
+        ? { magTaskId: String(input.magTaskId).replace(/^#/, ""), title: input.body.slice(0, 140) }
+        : undefined,
     });
   }
 
@@ -845,8 +860,81 @@ class HiveStore extends EventEmitter {
     if (!member) throw new Error("unknown member");
     member.lastSeenAt = Date.now();
     if (member.presence === "offline") member.presence = "free";
+    for (const child of this.world.members.filter((item) => item.hostId === memberId)) {
+      child.lastSeenAt = member.lastSeenAt;
+      if (child.presence === "offline") child.presence = "free";
+    }
     this.persist();
     return clone(member);
+  }
+
+  hostOf(memberId: string) {
+    const member = this.memberById(memberId);
+    if (!member) return undefined;
+    if (member.hostId) return this.memberById(member.hostId) ?? member;
+    return member;
+  }
+
+  hostedIds(agentId: string) {
+    return [
+      agentId,
+      ...this.world.members.filter((item) => item.hostId === agentId).map((item) => item.id),
+    ];
+  }
+
+  syncHostSubagents(hostId: string, agents: Array<{ handle: string; name?: string }>) {
+    const host = this.memberById(hostId);
+    if (!host || host.kind !== "agent" || host.hostId) return clone(host);
+    const swarmId = host.swarmId;
+    const wanted = new Set<string>();
+    for (const row of agents) {
+      const handle = String(row.handle || "")
+        .replace(/^@/, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "")
+        .slice(0, 24);
+      if (handle.length < 2 || handle === host.handle) continue;
+      wanted.add(handle);
+      const existing = this.world.members.find(
+        (item) => item.swarmId === swarmId && item.kind === "agent" && item.handle === handle,
+      );
+      if (existing) {
+        if (existing.peerHubId) continue;
+        if (!existing.hostId && this.world.agentKeys.some((key) => key.agentId === existing.id)) continue;
+        existing.hostId = host.id;
+        existing.openclawId = handle;
+        existing.name = (row.name || existing.name || handle).trim();
+        existing.role = `подагент @${host.handle}`;
+        existing.lastSeenAt = host.lastSeenAt;
+        if (existing.presence === "offline") existing.presence = host.presence === "offline" ? "offline" : "free";
+        continue;
+      }
+      this.world.members.push({
+        id: `${swarmId}:${handle}`,
+        swarmId,
+        kind: "agent",
+        name: (row.name || handle).trim(),
+        handle,
+        role: `подагент @${host.handle}`,
+        os: host.os,
+        presence: host.presence === "offline" ? "offline" : "free",
+        lastSeenAt: host.lastSeenAt,
+        machine: host.machine,
+        region: host.region,
+        capabilities: ["пейджер", "чат", "полный канал"],
+        simulated: false,
+        discoverable: false,
+        hostId: host.id,
+        openclawId: handle,
+      });
+    }
+    this.world.members = this.world.members.filter((item) => {
+      if (item.hostId !== host.id) return true;
+      return wanted.has(item.handle);
+    });
+    this.emitState(swarmId);
+    this.persist();
+    return clone(host);
   }
 
   rotateAgentKey(userId: string, agentId: string) {
@@ -854,6 +942,9 @@ class HiveStore extends EventEmitter {
     const agent = this.memberById(agentId);
     if (!swarm || !agent || agent.swarmId !== swarm.id || agent.kind !== "agent") {
       throw new Error("forbidden");
+    }
+    if (agent.hostId) {
+      throw new Error(`У подагента нет своего ключа — будит хост @${this.memberById(agent.hostId)?.handle ?? "host"}`);
     }
     const plaintext = newAgentKey();
     const record: AgentKey = { agentId, keyHash: hashAgentKey(plaintext) };
@@ -957,6 +1048,23 @@ class HiveStore extends EventEmitter {
     return clone(agent);
   }
 
+  setAgentMagProject(userId: string, agentId: string, magProjectId: string) {
+    const swarm = this.swarmByOwner(userId);
+    const agent = this.memberById(agentId);
+    if (!swarm || !agent || agent.swarmId !== swarm.id || agent.kind !== "agent") {
+      throw new Error("forbidden");
+    }
+    const projectId = magProjectId.trim();
+    agent.magProjectId = projectId || undefined;
+    const policy = resolvePolicy(swarm);
+    const magProjectsByHandle = { ...policy.magProjectsByHandle };
+    if (projectId) magProjectsByHandle[agent.handle] = projectId;
+    else delete magProjectsByHandle[agent.handle];
+    swarm.policy = { ...policy, magProjectsByHandle };
+    this.emitState(swarm.id);
+    return clone(agent);
+  }
+
   connectMag(
     userId: string,
     input: { agentKey: string; projectId?: string; apiUrl?: string; gatewayUrl?: string },
@@ -1038,7 +1146,18 @@ class HiveStore extends EventEmitter {
     if (patch.overlayOnly === true && !resolvePolicy(swarm).overlayOnly) {
       this.setOverlayOnly(userId, true);
     }
-    const next = { ...resolvePolicy(swarm), ...patch };
+    const current = resolvePolicy(swarm);
+    const next = { ...current, ...patch };
+    if (patch.magProjectsByHandle) {
+      next.magProjectsByHandle = { ...current.magProjectsByHandle };
+      for (const [handle, projectId] of Object.entries(patch.magProjectsByHandle)) {
+        const key = handle.replace(/^@/, "").toLowerCase().trim();
+        const value = String(projectId ?? "").trim();
+        if (!key) continue;
+        if (value) next.magProjectsByHandle[key] = value;
+        else delete next.magProjectsByHandle[key];
+      }
+    }
     if (typeof next.etherMax === "number") next.etherMax = Math.min(2000, Math.max(40, Math.floor(next.etherMax)));
     if (typeof next.swarmPageMax === "number") {
       next.swarmPageMax = Math.min(2000, Math.max(80, Math.floor(next.swarmPageMax)));
@@ -1238,21 +1357,51 @@ class HiveStore extends EventEmitter {
     const cleaned = stripFederationBody(body, resolvePolicy(swarm).etherMax);
     if (!cleaned) throw new Error("Пустой пейдж");
     const token = decryptSecret(peer.tokenEnc, swarmCryptoKey(swarm.id));
-    const response = await fetch(`${peer.url}/api/federation/page`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Hive-Peer-Key": token },
-      body: JSON.stringify({
-        fromHandle: from.handle,
-        fromSwarmName: swarm.name,
-        toHandle: handle,
-        body: cleaned,
-        hubUrl: swarm.publicUrl || process.env.HIVE_PUBLIC_URL || "",
-      }),
-      signal: AbortSignal.timeout(8000),
+    const a2aBody = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "message/send",
+      params: {
+        message: {
+          role: "user",
+          parts: [{ kind: "text", text: cleaned }],
+          metadata: { toHandle: handle, fromHandle: from.handle, fromSwarmName: swarm.name },
+        },
+      },
     });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Чужой хаб: ${text.slice(0, 180) || response.status}`);
+    const headers = { "Content-Type": "application/json", "X-Hive-Peer-Key": token };
+    let sent = false;
+    try {
+      const a2a = await fetch(`${peer.url}/api/a2a`, {
+        method: "POST",
+        headers,
+        body: a2aBody,
+        signal: AbortSignal.timeout(8000),
+      });
+      if (a2a.ok) {
+        const json = (await a2a.json()) as { error?: { message?: string } };
+        if (!json.error) sent = true;
+      }
+    } catch {
+      /* Hive-native peer without A2A */
+    }
+    if (!sent) {
+      const response = await fetch(`${peer.url}/api/federation/page`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          fromHandle: from.handle,
+          fromSwarmName: swarm.name,
+          toHandle: handle,
+          body: cleaned,
+          hubUrl: swarm.publicUrl || process.env.HIVE_PUBLIC_URL || "",
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Чужой хаб: ${text.slice(0, 180) || response.status}`);
+      }
     }
     const ghostId = `ghost-out:${peer.id}:${handle}`;
     let ghost = this.memberById(ghostId);
@@ -1296,18 +1445,22 @@ class HiveStore extends EventEmitter {
         message.body.includes(`@${member.handle}`)
       );
     });
-    const payload = JSON.stringify({
-      type: "hive_page",
-      at: message.createdAt,
-      lane: message.lane,
-      kind: message.kind,
-      body: message.body,
-      task: message.taskRef ?? null,
-      fromId: message.fromId,
-    });
     const swarm = this.world.swarms.find((item) => item.id === message.swarmId);
     for (const target of targets) {
-      const tunnel = this.world.tunnels.find((item) => item.agentId === target.id);
+      const host = this.hostOf(target.id) ?? target;
+      const body = JSON.stringify({
+        type: "hive_page",
+        at: message.createdAt,
+        lane: message.lane,
+        kind: message.kind,
+        body: message.body,
+        task: message.taskRef ?? null,
+        fromId: message.fromId,
+        toId: target.id,
+        toHandle: target.handle,
+        openclawAgent: target.openclawId || target.handle,
+      });
+      const tunnel = this.world.tunnels.find((item) => item.agentId === host.id);
       const hubIp = overlayHubIp();
       const overlayWake =
         swarm &&
@@ -1317,12 +1470,12 @@ class HiveStore extends EventEmitter {
         tunnel.overlayIp !== hubIp
           ? `http://${tunnel.overlayIp}:${tunnel.ssh?.wakePort ?? 18790}/hive/wake`
           : null;
-      const urls = [...new Set([target.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null, overlayWake].filter(Boolean))] as string[];
+      const urls = [...new Set([host.webhookUrl, tunnel ? reverseWakeUrl(tunnel) : null, overlayWake].filter(Boolean))] as string[];
       for (const url of urls) {
         void fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Hive-Event": "page" },
-          body: payload,
+          body,
           signal: AbortSignal.timeout(4000),
         }).catch(() => undefined);
       }
@@ -1333,16 +1486,23 @@ class HiveStore extends EventEmitter {
     this.purgeExpired();
     const agent = this.memberById(agentId);
     if (!agent) throw new Error("unknown agent");
+    const ids = new Set(this.hostedIds(agentId));
+    const handles = [...ids]
+      .map((id) => this.memberById(id)?.handle)
+      .filter((handle): handle is string => Boolean(handle));
     return this.world.messages.filter((message) => {
       if (message.expiresAt <= Date.now()) return false;
       if (after && message.createdAt <= after) return false;
-      if (message.fromId === agentId) return false;
-      if (message.toId === agentId) return true;
-      return (
-        message.scope === "swarm" &&
-        message.swarmId === agent.swarmId &&
-        message.body.includes(`@${agent.handle}`)
-      );
+      const from = this.memberById(message.fromId);
+    if (ids.has(message.fromId)) return false;
+    if (message.toId && ids.has(message.toId)) return true;
+    if (from?.kind === "agent" && from.id !== agentId && from.hostId !== agentId) return false;
+    return (
+      message.scope === "swarm" &&
+      message.swarmId === agent.swarmId &&
+      from?.kind === "human" &&
+      handles.some((handle) => message.body.includes(`@${handle}`))
+    );
     });
   }
 
@@ -1385,6 +1545,10 @@ class HiveStore extends EventEmitter {
     return this.world.members;
   }
 
+  publicSwarmName() {
+    return this.world.swarms[0]?.name || "swarm";
+  }
+
   exportKnowledgeBase(swarmId: string) {
     const swarm = this.world.swarms.find((item) => item.id === swarmId);
     const members = this.world.members.filter((member) => member.swarmId === swarmId);
@@ -1409,11 +1573,23 @@ class HiveStore extends EventEmitter {
   }
 
   private applyPresence(message: Message, from: Member) {
-    if (from.kind !== "agent" || message.scope !== "swarm") return;
+    if (message.scope !== "swarm") return;
+    const to = message.toId ? this.memberById(message.toId) : undefined;
+    if (from.kind === "human" && to?.kind === "agent") {
+      if (
+        message.kind === "page" ||
+        message.kind === "task_assigned" ||
+        message.kind === "chat" ||
+        message.kind === "artifact"
+      ) {
+        to.presence = "busy";
+      }
+      return;
+    }
+    if (from.kind !== "agent") return;
     if (message.kind === "task_assigned") {
       from.presence = "free";
       from.currentTaskId = undefined;
-      const to = message.toId ? this.memberById(message.toId) : undefined;
       if (to && to.kind === "agent") {
         to.presence = "busy";
         to.currentTaskId = message.taskRef?.magTaskId ?? to.currentTaskId;

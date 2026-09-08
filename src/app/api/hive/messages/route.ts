@@ -27,6 +27,7 @@ export async function POST(request: Request) {
     let scope: "swarm" | "federation" | undefined;
     let lane: MessageLane | undefined;
     let secret: { label: string; login: string; password: string } | undefined;
+    let magTaskId: string | undefined;
     const attachments = [];
 
     if (contentType.includes("multipart/form-data")) {
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
       kind = (String(form.get("kind") ?? "") || undefined) as MessageKind | undefined;
       scope = form.get("scope") === "federation" ? "federation" : "swarm";
       lane = asLane(form.get("lane"));
+      magTaskId = String(form.get("magTaskId") ?? "").trim() || undefined;
       const file = form.get("file");
       if (file instanceof File && file.size > 0) {
         const bytes = Buffer.from(await file.arrayBuffer());
@@ -67,6 +69,7 @@ export async function POST(request: Request) {
         scope?: "swarm" | "federation";
         lane?: MessageLane;
         secret?: { label: string; login: string; password: string };
+        magTaskId?: string;
       };
       body = json.body ?? "";
       toId = json.toId;
@@ -74,6 +77,7 @@ export async function POST(request: Request) {
       scope = json.scope;
       lane = asLane(json.lane);
       secret = json.secret;
+      magTaskId = json.magTaskId?.trim() || undefined;
     }
 
     if (!body.trim() && !attachments.length && !secret) throw new Error("Пустое сообщение");
@@ -86,6 +90,7 @@ export async function POST(request: Request) {
       lane,
       attachments,
       secret,
+      magTaskId,
     });
     const mag =
       message.scope === "swarm"

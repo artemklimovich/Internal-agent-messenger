@@ -10,7 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useHive } from "@/hooks/use-hive";
 import { cn } from "@/lib/utils";
-import type { EtherAgent, Member, MessageKind, MessageLane, Presence } from "@/lib/types";
+import type { EtherAgent, MagInventory, Member, MessageKind, MessageLane, Presence } from "@/lib/types";
+import { hiveMagProjectFor } from "@/lib/types";
 import {
   Bot,
   Lock,
@@ -28,11 +29,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type View = "pager" | "ether" | "tunnels" | "cabinet";
 
-const PRESENCE: Record<Presence, string> = {
-  free: "свободен",
-  busy: "думает",
-  blocked: "проблема",
-  offline: "офлайн",
+const RADIO: Record<Presence, string> = {
+  free: "радио: свободен",
+  busy: "радио: думает",
+  blocked: "радио: проблема",
+  offline: "радио: офлайн",
 };
 
 const PAGER_STEPS = [
@@ -55,7 +56,7 @@ export function HiveApp() {
   const [lane, setLane] = useState<MessageLane>("pager");
   const [filter, setFilter] = useState<"all" | MessageLane>("all");
   const [draft, setDraft] = useState("");
-  const [kind, setKind] = useState<MessageKind>("task_assigned");
+  const [kind, setKind] = useState<MessageKind>("page");
   const [toId, setToId] = useState<string | undefined>();
   const [file, setFile] = useState<File | null>(null);
   const [secretLabel, setSecretLabel] = useState("доступ");
@@ -63,6 +64,9 @@ export function HiveApp() {
   const [secretPassword, setSecretPassword] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [magNote, setMagNote] = useState<string | null>(null);
+  const [magSurvey, setMagSurvey] = useState<MagInventory | null>(null);
+  const [magTaskId, setMagTaskId] = useState<string | undefined>();
   const [halting, setHalting] = useState(false);
   const [talkBusy, setTalkBusy] = useState(false);
   const [disablingDemo, setDisablingDemo] = useState(false);
@@ -71,7 +75,6 @@ export function HiveApp() {
   const [sceneKind, setSceneKind] = useState<"pager" | "full">("pager");
   const [sceneStep, setSceneStep] = useState(0);
   const [issuedKey, setIssuedKey] = useState<{ handle: string; key: string } | null>(null);
-  const [exportNote, setExportNote] = useState<string | null>(null);
   const [etherTo, setEtherTo] = useState<EtherAgent | null>(null);
   const [admin, setAdmin] = useState<{ users: Array<{ id: string; email: string; name: string; disabled: boolean; swarm?: string }> } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -103,6 +106,25 @@ export function HiveApp() {
     }
     return swarm;
   }, [data, filter, toId]);
+  const magTasks = useMemo(() => {
+    const tasks = magSurvey?.tasks ?? [];
+    if (!data) return { tasks, project: undefined as string | undefined };
+    const target = toId ? data.members.find((member) => member.id === toId) : undefined;
+    const project = hiveMagProjectFor(
+      target,
+      {
+        magProjectId: data.mag.projectId,
+        magConnect: { projectId: data.mag.projectId },
+        policy: data.policy,
+      },
+      data.members,
+    );
+    if (!toId || !project) return { tasks, project };
+    return {
+      project,
+      tasks: tasks.filter((task) => !task.projectId || task.projectId === project),
+    };
+  }, [data, magSurvey?.tasks, toId]);
   const etherMessages = useMemo(
     () => (data?.messages ?? []).filter((message) => message.scope === "federation"),
     [data],
@@ -116,6 +138,25 @@ export function HiveApp() {
         : lane === "full"
           ? (data?.lanes.full.captionMax ?? 4000)
           : (data?.pager.swarmMax ?? 280);
+
+  useEffect(() => {
+    if (view !== "pager" || !data) return;
+    if (!(data.mag.connected || data.mag.hasKey)) return;
+    let cancelled = false;
+    void fetch("/api/hive/cabinet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "inspect-mag" }),
+    })
+      .then((response) => response.json())
+      .then((json: { inventory?: MagInventory }) => {
+        if (!cancelled && json.inventory) setMagSurvey(json.inventory);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [view, data?.mag.connected, data?.mag.hasKey, data?.mag.projectId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -169,17 +210,35 @@ export function HiveApp() {
     if (!draft.trim() && !file && !secret) return;
     setSending(true);
     setSendError(null);
+    setMagNote(null);
     try {
-      await send({
-        body: draft.trim(),
+      let body = draft.trim();
+      if (scope === "swarm" && magTaskId && body && !body.includes(`#${magTaskId}`)) {
+        body = `MAG #${magTaskId} ${body}`.trim();
+      }
+      const sendKind =
+        scope === "federation"
+          ? "page"
+          : lane === "full"
+            ? secret
+              ? "secret"
+              : "artifact"
+            : magTaskId
+              ? "task_assigned"
+              : kind;
+      const mag = await send({
+        body,
         toId: scope === "federation" ? etherTo?.id : toId,
-        kind: scope === "federation" ? "page" : lane === "full" ? (secret ? "secret" : "artifact") : kind,
+        kind: sendKind,
         scope,
         lane: scope === "federation" ? "pager" : lane,
         file: scope === "swarm" && lane === "full" ? file ?? undefined : undefined,
         secret,
+        magTaskId: scope === "swarm" && lane === "pager" ? magTaskId : undefined,
       });
+      if (mag?.detail) setMagNote(mag.detail);
       setDraft("");
+      setKind("page");
       setFile(null);
       setSecretLogin("");
       setSecretPassword("");
@@ -452,30 +511,51 @@ export function HiveApp() {
                   Сцена чата и файлов
                 </Button>
               </>
-            ) : (
+            ) : data.members.filter((member) => member.kind === "agent" && !member.peerHubId).length === 0 ? (
               <p className="mb-3 text-xs text-muted-foreground">
                 Пустой рой. Кабинет → создать агента (handle, ключ hive_).
               </p>
-            )}
+            ) : null}
             <p className="text-[11px] tracking-wider text-muted-foreground uppercase">Свои агенты</p>
-            {data.members
-              .filter((member) => member.kind === "agent")
-              .filter((member) => !member.peerHubId)
-              .map((member) => (
+            {(() => {
+              const agents = data.members.filter((member) => member.kind === "agent" && !member.peerHubId);
+              const roots = agents.filter((member) => !member.hostId);
+              const kidsOf = (id: string) => agents.filter((member) => member.hostId === id);
+              const row = (member: Member, nested: boolean) => {
+                const host = nested ? data.members.find((item) => item.id === member.hostId) : undefined;
+                return (
                 <button
                   key={member.id}
                   type="button"
                   onClick={() => setToId(member.id)}
-                  className={cn("mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-accent", toId === member.id && "bg-accent")}
+                  className={cn(
+                    "mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-accent",
+                    nested && "ml-3 border-l border-amber-400/20 pl-3",
+                    toId === member.id && "bg-accent",
+                  )}
                 >
                   <Bot className="size-4 text-amber-300" />
                   <span className="min-w-0 flex-1">
                     @{member.handle}
-                    <span className="block text-[11px] text-muted-foreground">{PRESENCE[member.presence]}</span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {nested ? `на @${host?.handle ?? "host"} · ${RADIO[member.presence]}` : RADIO[member.presence]}
+                    </span>
                   </span>
                   <span className={cn("size-2 rounded-full", member.presence === "free" && "bg-emerald-400", member.presence === "busy" && "bg-amber-400", member.presence === "blocked" && "bg-rose-400", member.presence === "offline" && "bg-zinc-500")} />
                 </button>
-              ))}
+                );
+              };
+              return (
+                <>
+                  {roots.flatMap((root) => [row(root, false), ...kidsOf(root.id).map((child) => row(child, true))])}
+                  {magSurvey?.ok ? (
+                    <p className="mt-3 text-[11px] text-muted-foreground">
+                      MAG (ключ роя): открытых {magSurvey.inboxOpen ?? magSurvey.tasks.length}. Это inbox CRM, не занятость на радио и не крон.
+                    </p>
+                  ) : null}
+                </>
+              );
+            })()}
           </aside>
           <section className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="border-b px-4 py-2 text-sm">
@@ -595,6 +675,38 @@ export function HiveApp() {
                     <Button size="sm" variant="outline" onClick={() => { setKind("page"); setDraft("Принято, смотрю."); }}>Короткий пейдж</Button>
                   ) : null}
                 </div>
+              {lane === "pager" && (data.mag.connected || data.mag.hasKey) ? (
+                <div className="mb-2 space-y-1">
+                  <p className="text-[11px] text-muted-foreground">
+                    Задача MAG из опроса — жёлтая карточка «поставил задачу». Без номера это просто вопрос, не работа.
+                    {toId
+                      ? ` Для @${data.members.find((member) => member.id === toId)?.handle} Hive пускает проект ${magTasks.project || "кабинета"}.`
+                      : " Выберите агента слева — чипы фильтруются его MAG-проектом."}
+                  </p>
+                  {magTasks.tasks.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {magTasks.tasks.map((task) => (
+                        <Button
+                          key={task.id}
+                          size="sm"
+                          variant={magTaskId === task.id ? "default" : "outline"}
+                          onClick={() => setMagTaskId(magTaskId === task.id ? undefined : task.id)}
+                        >
+                          #{task.id} {task.title.slice(0, 36)}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      {magSurvey?.ok
+                        ? toId && (magSurvey.tasks?.length ?? 0) > 0
+                          ? "В inbox ключа есть задачи, но не в проекте этого агента."
+                          : "Inbox пуст — пейдж останется в Hive."
+                        : magSurvey?.detail || "Опрос MAG ещё не пришёл (кабинет или подождите)."}
+                    </p>
+                  )}
+                </div>
+              ) : null}
               {lane === "chat" ? (
                 <p className="mb-2 text-xs text-muted-foreground">До 8000 знаков, 7 дней. Скиллы текстом, пояснения, выдержки из KB. Не статус задачи.</p>
               ) : null}
@@ -622,7 +734,7 @@ export function HiveApp() {
                   maxLength={maxChars}
                   placeholder={
                     lane === "pager"
-                      ? "Коротко, как пейджер"
+                      ? "Вопрос или статус. Задачу MAG — кнопкой # ниже."
                       : lane === "chat"
                         ? "Длинный текст своему агенту"
                         : "Подпись к файлу или конверту"
@@ -639,6 +751,7 @@ export function HiveApp() {
                 </Button>
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">{draft.length}/{maxChars}</p>
+              {magNote ? <p className="mt-1 text-[11px] text-amber-200/80">{magNote}</p> : null}
               {sendError ? <p className="mt-2 text-xs text-rose-300">{sendError}</p> : null}
             </div>
           </section>
@@ -655,14 +768,14 @@ export function HiveApp() {
             </p>
             {data.ether.length === 0 ? (
               <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-                Чужих агентов нет. Покажите своего в эфире или в кабинете добавьте URL чужого хаба и токен `hive_peer_`.
+                Чужих агентов нет. Покажите своего в эфире, добавьте URL чужого хаба и `hive_peer_`, либо отдайте A2A Agent Card (`/.well-known/agent.json`).
               </p>
             ) : (
               data.ether.map((agent) => (
                 <button key={agent.id} type="button" onClick={() => setEtherTo(agent)} className={cn("mb-1 w-full rounded-lg border px-3 py-2 text-left text-sm", etherTo?.id === agent.id && "border-amber-300")}>
                   @{agent.handle} · {agent.region}
                   <span className="block text-[11px] text-muted-foreground">
-                    {agent.remote ? "чужой хаб · " : ""}{agent.swarmName} · {PRESENCE[agent.presence]}
+                    {agent.remote ? "чужой хаб · " : ""}{agent.swarmName} · {RADIO[agent.presence]}
                   </span>
                 </button>
               ))
@@ -710,20 +823,7 @@ export function HiveApp() {
 
       {view === "tunnels" ? (
         <ScrollArea className="min-h-0 flex-1">
-          <TunnelsView
-            data={data}
-            onExport={() => {
-              void fetch("/api/hive/tunnels", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ exportToMag: true }),
-              })
-                .then((response) => response.json())
-                .then((json: { mag?: { detail?: string } }) => setExportNote(json.mag?.detail ?? "готово"));
-            }}
-            exporting={false}
-            exportNote={exportNote}
-          />
+          <TunnelsView data={data} />
         </ScrollArea>
       ) : null}
 

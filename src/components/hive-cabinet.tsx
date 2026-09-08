@@ -4,9 +4,9 @@ import { ArchitectureView } from "@/components/architecture-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { HivePayload } from "@/hooks/use-hive";
-import type { Member, OsKind, SwarmPolicy } from "@/lib/types";
+import type { MagInventory, Member, OsKind, SwarmPolicy } from "@/lib/types";
 import { Bot } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function HiveCabinet({
   data,
@@ -44,6 +44,8 @@ export function HiveCabinet({
   const [peerName, setPeerName] = useState("");
   const [publicUrl, setPublicUrl] = useState(data.publicUrl ?? "");
   const [invite, setInvite] = useState<string | null>(null);
+  const [magInventory, setMagInventory] = useState<MagInventory | null>(null);
+  const [magInspecting, setMagInspecting] = useState(false);
 
   async function cabinet(payload: Record<string, unknown>) {
     const response = await fetch("/api/hive/cabinet", {
@@ -56,12 +58,34 @@ export function HiveCabinet({
     return json;
   }
 
+  useEffect(() => {
+    if (!(data.mag.connected || data.mag.hasKey)) return;
+    let cancelled = false;
+    setMagInspecting(true);
+    void cabinet({ action: "inspect-mag" })
+      .then((json) => {
+        if (cancelled) return;
+        if (json.inventory) setMagInventory(json.inventory as MagInventory);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setMagInspecting(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Опрос при входе в кабинет, не по таймеру.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.mag.connected, data.mag.hasKey, data.mag.projectId]);
+
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold">Кабинет роя</h2>
-          <p className="text-sm text-muted-foreground">Ключи, MAG Master, чужие хабы. Не вторая CRM.</p>
+          <p className="text-sm text-muted-foreground">
+            Среда: человек видит радио роя, политики MAG и опрос задач. Крон не третий — у агентов и в MAG он уже есть.
+          </p>
         </div>
         <Button variant="outline" onClick={() => onLogout()}>Выйти</Button>
       </div>
@@ -103,13 +127,14 @@ export function HiveCabinet({
       <PolicyRules data={data} cabinet={cabinet} onRefresh={onRefresh} onError={onError} />
 
       <section className="space-y-2 rounded-xl border p-3">
-        <h3 className="font-medium">MAG Master External MCP</h3>
+        <h3 className="font-medium">MAG Master — политики ключа и опрос задач</h3>
         <p className="text-xs text-muted-foreground">
           {data.mag.connected
-            ? `Подключено в кабинете · проект ${data.mag.projectId}`
+            ? `Подключено · проект ${data.mag.projectId}`
             : data.mag.hasKey
-              ? "Ключ только в .env хаба. Для витрины вставьте X-Agent-Key сюда — кабинет важнее env."
-              : "Не подключено — пейджер с #id не пишет в карточку."}{" "}
+              ? "Ключ только в .env хаба. Для опроса вставьте X-Agent-Key сюда — кабинет важнее env."
+              : "Не подключено — пейджер с #id не пишет в карточку, опрос пустой."}{" "}
+          Политики действий живут в MAG; Hive их показывает, не дублирует крон и не переписывает инструкции агента.{" "}
           <a className="underline" href="https://magaicrm.ru/help/docs/mcp/external-agents" target="_blank" rel="noreferrer">
             Справка
           </a>
@@ -121,9 +146,10 @@ export function HiveCabinet({
             size="sm"
             onClick={() => {
               void cabinet({ action: "connect-mag", magAgentKey: magKey, magProjectId: magProject })
-                .then(() => {
+                .then((json) => {
                   setMagKey("");
                   onError(null);
+                  if (json.inventory) setMagInventory(json.inventory as MagInventory);
                   return onRefresh();
                 })
                 .catch((err: Error) => onError(err.message));
@@ -131,19 +157,46 @@ export function HiveCabinet({
           >
             Подключить
           </Button>
+          {data.mag.connected || data.mag.hasKey ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={magInspecting}
+              onClick={() => {
+                setMagInspecting(true);
+                void cabinet({ action: "inspect-mag", fresh: true })
+                  .then((json) => {
+                    if (json.inventory) setMagInventory(json.inventory as MagInventory);
+                    onError(null);
+                  })
+                  .catch((err: Error) => onError(err.message))
+                  .finally(() => setMagInspecting(false));
+              }}
+            >
+              {magInspecting ? "Опрос…" : "Опросить MAG"}
+            </Button>
+          ) : null}
           {data.mag.connected ? (
             <Button size="sm" variant="outline" onClick={() => void cabinet({ action: "disconnect-mag" }).then(() => onRefresh())}>
               Отключить
             </Button>
           ) : null}
         </div>
+        <MagInventoryCard inventory={magInventory} />
       </section>
 
       <section className="space-y-2 rounded-xl border p-3">
         <h3 className="font-medium">Эфир между хабами</h3>
         <p className="text-xs text-muted-foreground">
-          Публичный URL своего Hive + токен. Чужой оператор добавляет ваш URL и токен. Только пейджер.
+          MCP для рук, свой Hive для своих машин, A2A когда заговорит чужой рой. Карточка без туннелей и MAG. Чужой SDK шлёт `message/send` на RPC — внутри это тот же эфир 140 знаков.
         </p>
+        {data.a2a?.cardUrl ? (
+          <p className="break-all font-mono text-[11px] text-muted-foreground">
+            Agent Card: {data.a2a.cardUrl}
+            <br />
+            RPC: {data.a2a.rpcUrl}
+          </p>
+        ) : null}
         <Input placeholder="https://hive.example.com" value={publicUrl} onChange={(event) => setPublicUrl(event.target.value)} />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => void cabinet({ action: "public-url", publicUrl }).then(() => onRefresh())}>
@@ -230,6 +283,11 @@ export function HiveCabinet({
               .then(() => onRefresh())
               .catch((err: Error) => onError(err.message))
           }
+          onMagProject={(projectId) =>
+            void cabinet({ action: "agent-mag-project", agentId: agent.id, magAgentProjectId: projectId })
+              .then(() => onRefresh())
+              .catch((err: Error) => onError(err.message))
+          }
         />
       ))}
 
@@ -273,9 +331,9 @@ function PolicyRules({
   if (!policy) return null;
   return (
     <section className="space-y-2 rounded-xl border p-3">
-      <h3 className="font-medium">Правила роя (настройки, не вшитый закон)</h3>
+      <h3 className="font-medium">Политики радио Hive</h3>
       <p className="text-xs text-muted-foreground">
-        MAG Master по-прежнему держит задачи. Здесь только как Hive будит исполнителей и что пускает в эфир.
+        Не политики MAG и не SOUL агента. Если выключено — Hive так и ведёт себя (не будит по overlay, не пускает эфир). Задачи по-прежнему в MAG. Проект MAG на каждого @handle — в карточке агента ниже (слой Hive, не allowlist ключа).
       </p>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={policy.etherInbound} onChange={(event) => toggle("etherInbound", event.target.checked)} />
@@ -319,27 +377,136 @@ function PolicyRules({
   );
 }
 
+function MagInventoryCard({ inventory }: { inventory: MagInventory | null }) {
+  if (!inventory) {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        При входе в кабинет Hive один раз читает MAG: политики ключа и открытые задачи. Повторить — кнопкой «Опросить MAG», без таймера.
+      </p>
+    );
+  }
+  const cap = inventory.capabilities;
+  const actions = inventory.magPolicy.effectiveActions.length
+    ? inventory.magPolicy.effectiveActions
+    : inventory.magPolicy.allowedActions;
+  return (
+    <div className="space-y-3 rounded-lg border border-foreground/10 bg-black/20 p-3 text-xs">
+      <p className={inventory.ok ? "text-teal-200/90" : "text-rose-300"}>{inventory.detail}</p>
+      {inventory.agentName ? (
+        <p>
+          Агент MAG: {inventory.agentName}
+          {inventory.agentMode ? ` · ${inventory.agentMode}` : ""}
+          {inventory.agentEnabled === false ? " · выключен" : ""}
+          {inventory.magPolicy.mcpPolicy ? ` · preset ${inventory.magPolicy.mcpPolicy}` : ""}
+        </p>
+      ) : null}
+
+      <div>
+        <p className="font-medium text-foreground">Политика MAG (как выдал ключ)</p>
+        {inventory.magPolicy.allowedProjectIds.length ? (
+          <p className="text-muted-foreground">
+            Проекты allowlist: {inventory.magPolicy.allowedProjectIds.join(", ")}
+          </p>
+        ) : (
+          <p className="text-muted-foreground">Allowlist проектов пуст — MAG считает доступными пересечение профиля владельца (см. список ниже).</p>
+        )}
+        {actions.length ? (
+          <p className="mt-1 max-h-24 overflow-auto text-muted-foreground">
+            Действия: {actions.join(", ")}
+          </p>
+        ) : (
+          <p className="text-muted-foreground">
+            Список actions пуст в ответе /context — ориентир: комментарии {cap.comments ? "да" : "не видно"} · задачи{" "}
+            {cap.tasks ? "да" : "нет"} · KB {cap.kbRead ? "чтение" : "нет чтения"}
+            {cap.kbWrite ? " + запись" : ""}.
+          </p>
+        )}
+      </div>
+
+      {inventory.projects.length ? (
+        <div>
+          <p className="font-medium text-foreground">Проекты, которые ключ видит</p>
+          <ul className="mt-1 list-inside list-disc text-muted-foreground">
+            {inventory.projects.map((project) => (
+              <li key={project.id}>
+                {project.name} <span className="font-mono">({project.id})</span>
+                {project.companyId ? ` · компания ${project.companyId}` : ""}
+                {project.id === inventory.projectId ? " · кабинет Hive" : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div>
+        <p className="font-medium text-foreground">
+          Опрос задач
+          {inventory.inboxOpen != null ? ` · открытых ${inventory.inboxOpen}` : ""}
+        </p>
+        {inventory.tasks.length ? (
+          <ul className="mt-1 space-y-1">
+            {inventory.tasks.map((task) => (
+              <li key={task.id} className="rounded-md border border-foreground/10 px-2 py-1">
+                <span className="font-mono">#{task.id}</span> {task.title}
+                {task.status ? ` · ${task.status}` : ""}
+                {task.projectName || task.projectId ? ` · ${task.projectName || task.projectId}` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground">
+            {cap.inbox ? "Открытых задач на этого внешнего агента нет (или inbox пуст)." : "Inbox MAG этому ключу не отдал."}
+          </p>
+        )}
+      </div>
+
+      {inventory.notes.map((note) => (
+        <p key={note} className="text-muted-foreground">
+          {note}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function AgentRow({
   agent,
   onRotate,
   onDiscoverable,
   onWebhook,
+  onMagProject,
 }: {
   agent: Member;
   onRotate: () => void;
   onDiscoverable: () => void;
   onWebhook: (url: string) => void;
+  onMagProject: (projectId: string) => void;
 }) {
   const [url, setUrl] = useState(agent.webhookUrl ?? "");
+  const [magProject, setMagProject] = useState(agent.magProjectId ?? "");
   return (
     <div className="space-y-2 rounded-xl border p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <Bot className="size-4 text-amber-300" />
         @{agent.handle} · {agent.os} · {agent.discoverable ? "в эфире" : "только свой рой"}
-        {agent.webhookUrl ? <span className="text-[11px] text-muted-foreground">webhook</span> : null}
+        {agent.hostId ? <span className="text-[11px] text-muted-foreground">подагент, без своего ключа</span> : null}
+        {agent.webhookUrl && !agent.hostId ? <span className="text-[11px] text-muted-foreground">webhook</span> : null}
+        {agent.hostId ? null : (
         <Button size="sm" variant="outline" onClick={onRotate}>Новый ключ</Button>
+        )}
         <Button size="sm" variant="ghost" onClick={onDiscoverable}>
           {agent.discoverable ? "Скрыть из эфира" : "Показать в эфире"}
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Input
+          className="min-w-48 flex-1"
+          placeholder="MAG projectId этого агента (пусто = кабинет / хост)"
+          value={magProject}
+          onChange={(event) => setMagProject(event.target.value)}
+        />
+        <Button size="sm" variant="outline" onClick={() => onMagProject(magProject)}>
+          MAG-проект
         </Button>
       </div>
       <div className="flex flex-wrap gap-2">

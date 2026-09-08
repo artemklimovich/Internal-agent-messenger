@@ -30,6 +30,7 @@ export interface HivePayload {
   };
   peers?: Array<{ id: string; url: string; name: string; lastOkAt?: number; lastError?: string }>;
   publicUrl?: string;
+  a2a?: { cardUrl: string; rpcUrl: string; note: string };
   overlayOnly?: boolean;
   policy?: SwarmPolicy;
   overlay?: {
@@ -119,6 +120,7 @@ export function useHive() {
       lane?: MessageLane;
       file?: File;
       secret?: { label: string; login: string; password: string };
+      magTaskId?: string;
     }) => {
       const form = new FormData();
       form.append("body", input.body);
@@ -126,6 +128,7 @@ export function useHive() {
       if (input.kind) form.append("kind", input.kind);
       if (input.scope) form.append("scope", input.scope);
       if (input.lane) form.append("lane", input.lane);
+      if (input.magTaskId) form.append("magTaskId", input.magTaskId);
       if (input.file) form.append("file", input.file);
       if (input.secret) {
         form.append("secretLabel", input.secret.label);
@@ -136,9 +139,10 @@ export function useHive() {
         method: "POST",
         body: form,
       });
-      const json = (await response.json()) as { error?: string };
+      const json = (await response.json()) as { error?: string; mag?: { attempted?: boolean; ok?: boolean; detail?: string } };
       if (!response.ok) throw new Error(json.error || "не отправилось");
       await refresh();
+      return json.mag;
     },
     [refresh],
   );

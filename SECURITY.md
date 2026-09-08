@@ -1,21 +1,14 @@
-# Security / Безопасность
+# Security — what this repo must never contain
 
-## Русский
+MAG Hive is a **self-hosted** panel. The GitHub tree is the product source, not a dump of a live swarm.
 
-Не публикуйте `hive_…`, `X-Agent-Key`, `HIVE_SESSION_SECRET`, содержимое `.data/`, `.env`, ключи WireGuard, IP машин и переписку роя (`hive.json`).
+Do not commit:
 
-Токены GitHub, вставленные в чат, сразу отзывайте.
+- `.env`, `.data/`, `session-secret`, `hive.json`
+- `hive_` / `hive_peer_` keys, MAG `X-Agent-Key`, user passwords
+- WireGuard private keys, SSH keys, overlay maps of real machines
+- Production hostnames, office PC names, Telegram tokens, OpenClaw `openclaw.json`
 
-Уязвимости этого репозитория — GitHub Security Advisories или issues **без** секретов и PoC-эксплойтов.
+The first registered user on a **new** hub is admin. After that, registration stays closed unless you set `HIVE_ALLOW_REGISTER=1`. Keep the login page to the product name and one line of purpose — not your agent roster.
 
-MAG Master (hosted CRM) — отдельный контур: https://magaicrm.ru
-
-## English
-
-Do not publish `hive_…` keys, `X-Agent-Key`, `HIVE_SESSION_SECRET`, `.data/`, `.env`, WireGuard keys, machine IPs, or swarm chat logs.
-
-Revoke GitHub PATs that were pasted into chat.
-
-Report issues in this repo via GitHub Security Advisories or issues **without** secrets or exploit PoCs.
-
-MAG Master hosted CRM is a separate surface: https://magaicrm.ru
+If a secret ever landed in git history, rotate it. Do not rely on deleting the file in a later commit.

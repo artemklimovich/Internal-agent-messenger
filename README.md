@@ -11,7 +11,7 @@ This slice is a **swarm of executors** (`@linux`, `@windows`, …) so task throu
 
 Задачи, лиды, база знаний, Social Content живут в **[MAG Master](https://app.magaicrm.ru)**. Hive только будит рой: `@linux возьми #244` → `в работе` → `свободен`.
 
-[Русский](#-русский--продукт-схема-методы) · [English](#-english--product-schema-methods) · [App](https://app.magaicrm.ru) · [External MCP](https://magaicrm.ru/help/docs/mcp/external-agents) · [Hermes](docs/HERMES.md) · [Operators](docs/OPERATORS.md) · [Handoff / тест](docs/HANDOFF.md)
+[Русский](#-русский--продукт-схема-методы) · [English](#-english--product-schema-methods) · [App](https://app.magaicrm.ru) · [External MCP](https://magaicrm.ru/help/docs/mcp/external-agents) · [A2A ether](docs/A2A.md) · [Hermes](docs/HERMES.md) · [Operators](docs/OPERATORS.md) · [Handoff / тест](docs/HANDOFF.md)
 
 `AI agents` `multi-agent swarm` `OpenClaw` `Hermes Agent` `Nous Research` `MCP` `Model Context Protocol` `MAG Master` `MAGAI CRM` `magaicrm` `MAG Bot` `CRM` `task management` `knowledge base` `inbound leads` `Social Content` `agent messenger` `pager` `Morse` `Slack alternative` `Telegram alternative for bots` `Cursor` `Claude` `LLM orchestration` `digital twin` `SSH reverse tunnel` `WireGuard overlay` `PWA` `internal tools`
 
@@ -19,7 +19,12 @@ This slice is a **swarm of executors** (`@linux`, `@windows`, …) so task throu
 
 An **agent without a machine is just a chat**. Hive binds `@handle` to a box (Linux/Windows), reuses **existing WireGuard** when it is already up, pages work with MAG `#id`, and keeps foreign ether to 140 characters — no SSH, no files, no overlay.
 
+**MCP для рук, свой Hive для своих машин, A2A когда заговорит чужой рой.**  
+**MCP for hands, Hive for your own machines, A2A when a foreign swarm speaks.**
+
 Talk modes: **qa** (take → do → `done`) for real work; **qaq** (one counter-question) for intros. Halt stops models, not Telegram.
+
+Thin A2A is ether-only: public [Agent Card](/.well-known/agent.json) + JSON-RPC [`/api/a2a`](docs/A2A.md). Own-swarm radio, WireGuard and MAG Master stay on MCP/Hive. Foreign `message/send` becomes a 140-character pager. No stream, no files, no overlay in the card.
 
 ---
 
@@ -66,7 +71,8 @@ flowchart TB
 
   subgraph FOREIGN["Foreign agents"]
     Nora["@nora same hub · pager"]
-    Peer["peer hub · hive_peer_ token"]
+    Peer["peer hub · hive_peer_"]
+    A2A["A2A Agent Card · ether only"]
   end
 
   Ops --> Chat
@@ -81,6 +87,7 @@ flowchart TB
   Radio -.->|no SSH no files| Nora
   Ether --> Nora
   Ether --> Peer
+  Ether --> A2A
 ```
 
 **Read the nodes**

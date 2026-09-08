@@ -42,3 +42,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# operator / runtime — never publish
+session-secret
+hive.json
+openclaw.json
+*.key

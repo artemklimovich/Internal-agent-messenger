@@ -1,7 +1,6 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { HivePayload } from "@/hooks/use-hive";
 import { recommendedPath } from "@/lib/tunnel-path";
@@ -10,34 +9,18 @@ import { useEffect, useState } from "react";
 
 export function TunnelsView({
   data,
-  onExport,
-  exporting,
-  exportNote,
 }: {
   data: HivePayload;
-  onExport: () => void;
-  exporting: boolean;
-  exportNote: string | null;
 }) {
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Только свой рой</p>
-          <h2 className="mt-1 text-2xl font-semibold">Туннели своих машин</h2>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Закрытый контур: если WireGuard уже поднят, Hive его подхватывает и рисует карту. Второй overlay 10.42 — только если своего туннеля нет. С улицы только UDP WG. Reverse SSH — запас. Рация и админка машин — один контур.
-          </p>
-        </div>
-        <Button onClick={onExport} disabled={exporting}>
-          {exporting ? "Экспорт…" : "В KB MAG Master"}
-        </Button>
-      </div>
-      {exportNote ? (
-        <p className="rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-sm">
-          {exportNote}
+      <div>
+        <p className="text-xs tracking-[0.2em] text-amber-200/80 uppercase">Только свой рой</p>
+        <h2 className="mt-1 text-2xl font-semibold">Туннели своих машин</h2>
+        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+          Карта WireGuard — хосты роя, не MAG Master. CRM смотрите в кабинете: что видит ключ и жив ли Gateway. Ростер ниже можно скопировать своим; в KB MAG Hive его сам не пишет.
         </p>
-      ) : null}
+      </div>
       <Mesh data={data} />
       <OverlayConfigs />
       <div className="grid gap-3 lg:grid-cols-2">
@@ -48,7 +31,7 @@ export function TunnelsView({
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Фрагмент для MAG Master KB</CardTitle>
+          <CardTitle className="text-base">Фрагмент роя (своим, не в MAG)</CardTitle>
         </CardHeader>
         <CardContent>
           <pre className="max-h-80 overflow-auto rounded-lg bg-black/30 p-3 text-xs leading-relaxed whitespace-pre-wrap">

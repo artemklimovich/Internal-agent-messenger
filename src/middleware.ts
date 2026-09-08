@@ -6,12 +6,16 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/auth/login") ||
     pathname.startsWith("/api/auth/register") ||
+    pathname.startsWith("/api/auth/status") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/icon") ||
     pathname.startsWith("/manifest") ||
+    pathname === "/robots.txt" ||
     pathname === "/sw.js" ||
     pathname === "/offline.html" ||
-    pathname === "/favicon.ico"
+    pathname === "/favicon.ico" ||
+    pathname === "/.well-known/agent.json" ||
+    pathname.startsWith("/.well-known/")
   ) {
     return NextResponse.next();
   }

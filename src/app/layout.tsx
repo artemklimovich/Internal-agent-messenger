@@ -17,20 +17,13 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "MAG Hive",
-  description:
-    "MAG Hive — pager for OpenClaw / Hermes swarms on MAG Master CRM. Разработчик: Артём Климович. Рация роя: пейджер, чат, полный канал.",
+  description: "MAG Hive — управление роем агентов.",
+  robots: { index: false, follow: false },
   applicationName: "MAG Hive",
-  authors: [{ name: "Артём Климович", url: "https://github.com/artemklimovich" }],
-  creator: "Артём Климович",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.svg",
     apple: "/icon.svg",
-  },
-  appleWebApp: {
-    capable: true,
-    title: "MAG Hive",
-    statusBarStyle: "black-translucent",
   },
 };
 

@@ -42,6 +42,8 @@ export interface SwarmPolicy {
   overlayWake: boolean;
   etherMax: number;
   swarmPageMax: number;
+  /** Hive-слой: какой @handle пишет в какой MAG projectId. Пусто — кабинетный проект хаба. */
+  magProjectsByHandle: Record<string, string>;
 }
 
 export const DEFAULT_POLICY: SwarmPolicy = {
@@ -52,6 +54,7 @@ export const DEFAULT_POLICY: SwarmPolicy = {
   overlayWake: true,
   etherMax: FED_PAGE_MAX,
   swarmPageMax: SWARM_PAGE_MAX,
+  magProjectsByHandle: {},
 };
 
 export function resolvePolicy(swarm: { overlayOnly?: boolean; policy?: Partial<SwarmPolicy> }): SwarmPolicy {
@@ -65,6 +68,7 @@ export function resolvePolicy(swarm: { overlayOnly?: boolean; policy?: Partial<S
     overlayWake: stored?.overlayWake ?? DEFAULT_POLICY.overlayWake,
     etherMax: stored?.etherMax ?? DEFAULT_POLICY.etherMax,
     swarmPageMax: stored?.swarmPageMax ?? DEFAULT_POLICY.swarmPageMax,
+    magProjectsByHandle: { ...DEFAULT_POLICY.magProjectsByHandle, ...(stored?.magProjectsByHandle ?? {}) },
   };
 }
 
@@ -84,6 +88,41 @@ export interface MagConnect {
   projectId: string;
   keyEnc: { iv: string; ciphertext: string; tag: string };
   connectedAt: number;
+}
+
+export interface MagInventory {
+  ok: boolean;
+  detail: string;
+  projectId: string;
+  agentName?: string;
+  agentMode?: string;
+  agentEnabled?: boolean;
+  webhookConfigured?: boolean;
+  webhookFiredByMag: boolean;
+  projects: Array<{ id: string; name: string; companyId?: string | null }>;
+  capabilities: {
+    comments: boolean;
+    kbRead: boolean;
+    kbWrite: boolean;
+    tasks: boolean;
+    inbox: boolean;
+  };
+  inboxOpen?: number;
+  tasks: Array<{
+    id: string;
+    title: string;
+    status?: string;
+    projectId?: string;
+    projectName?: string;
+    dueAt?: string;
+  }>;
+  magPolicy: {
+    allowedProjectIds: string[];
+    allowedActions: string[];
+    effectiveActions: string[];
+    mcpPolicy?: string;
+  };
+  notes: string[];
 }
 
 export interface Swarm {
@@ -133,6 +172,39 @@ export interface Member {
   discoverable?: boolean;
   webhookUrl?: string;
   peerHubId?: string;
+  /** Hive-node хоста (например @main). Подагент OpenClaw без своего hive_ ключа. */
+  hostId?: string;
+  openclawId?: string;
+}
+
+/** Какой MAG projectId разрешён этому агенту Hive. Не путать с «думает» на радио. */
+export function hiveMagProjectFor(
+  member: Member | undefined,
+  swarm: {
+    magProjectId?: string;
+    magConnect?: { projectId?: string };
+    policy?: Partial<SwarmPolicy>;
+  },
+  members: Member[],
+): string | undefined {
+  const cabinet = (swarm.magConnect?.projectId || swarm.magProjectId || "").trim();
+  const map = swarm.policy?.magProjectsByHandle ?? {};
+  const fromHandle = (handle: string, fallback?: string) => {
+    const mapped = (map[handle] || "").trim();
+    if (mapped) return mapped;
+    return (fallback || "").trim();
+  };
+  if (!member) return cabinet || undefined;
+  const own = fromHandle(member.handle, member.magProjectId);
+  if (own) return own;
+  if (member.hostId) {
+    const host = members.find((item) => item.id === member.hostId);
+    if (host) {
+      const inherited = fromHandle(host.handle, host.magProjectId);
+      if (inherited) return inherited;
+    }
+  }
+  return cabinet || undefined;
 }
 
 export interface Tunnel {

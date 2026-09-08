@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { assertSameOrigin } from "@/lib/crypto-security";
 import { fail } from "@/lib/http";
-import { probeMagKey } from "@/lib/mag-master";
+import { inspectMagAccess, probeMagKey } from "@/lib/mag-master";
 import { getStore } from "@/lib/store";
 import type { OsKind, SwarmPolicy } from "@/lib/types";
 
@@ -32,6 +32,8 @@ export async function POST(request: Request) {
       publicUrl?: string;
       overlayOnly?: boolean;
       policy?: Record<string, unknown>;
+      magAgentProjectId?: string;
+      fresh?: boolean;
     };
     const store = getStore();
     switch (body.action) {
@@ -59,6 +61,11 @@ export async function POST(request: Request) {
       case "webhook":
         if (!body.agentId) throw new Error("agentId required");
         return Response.json({ agent: store.setWebhook(session.id, body.agentId, body.webhookUrl ?? "") });
+      case "agent-mag-project":
+        if (!body.agentId) throw new Error("agentId required");
+        return Response.json({
+          agent: store.setAgentMagProject(session.id, body.agentId, body.magAgentProjectId ?? body.magProjectId ?? ""),
+        });
       case "connect-mag": {
         const connected = store.connectMag(session.id, {
           agentKey: body.magAgentKey ?? "",
@@ -74,8 +81,13 @@ export async function POST(request: Request) {
           store.disconnectMag(session.id);
           throw new Error(probe.detail);
         }
-        return Response.json({ ...connected, probe: probe.detail });
+        const inventory = await inspectMagAccess(session.swarmId, { fresh: true });
+        return Response.json({ ...connected, probe: probe.detail, inventory });
       }
+      case "inspect-mag":
+        return Response.json({
+          inventory: await inspectMagAccess(session.swarmId, { fresh: Boolean(body.fresh) }),
+        });
       case "disconnect-mag":
         return Response.json(store.disconnectMag(session.id));
       case "peer-invite":
